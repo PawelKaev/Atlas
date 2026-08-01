@@ -1,0 +1,28 @@
+﻿# Rust
+grammalang-core/target/
+grammalang-core/Cargo.lock
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+dist/
+build/
+
+# LLVM
+*.ll
+*.o
+*.obj
+*.exe
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

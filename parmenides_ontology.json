@@ -1,0 +1,41 @@
+{
+  "nodes": [
+    {
+      "id": "Бытие",
+      "type": "substance",
+      "energy": 1.0
+    },
+    {
+      "id": "пребывает",
+      "type": "mode",
+      "process": false
+    },
+    {
+      "id": "изменяется",
+      "type": "mode",
+      "process": false
+    },
+    {
+      "id": "борется",
+      "type": "mode",
+      "process": false
+    }
+  ],
+  "links": [
+    {
+      "source": "пребывает",
+      "target": "Бытие",
+      "type": "mode_relation"
+    },
+    {
+      "source": "изменяется",
+      "target": "Бытие",
+      "type": "mode_relation"
+    },
+    {
+      "source": "борется",
+      "target": "Бытие",
+      "type": "mode_relation"
+    }
+  ]
+}
