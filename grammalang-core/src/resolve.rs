@@ -105,6 +105,15 @@ impl Resolver {
                                 span: Span { line: 1, column: 1, offset: 0 },
                                 публичный: *открыто,
                             });
+                            for вариант in варианты {
+                                module_syms.insert(вариант.имя.clone(), Symbol {
+                                    kind: SymbolKind::Сумма {
+                                        варианты: vec![(вариант.имя.clone(), вариант.тип_данных.clone())]
+                                    },
+                                    span: Span { line: 1, column: 1, offset: 0 },
+                                    публичный: *открыто,
+                                });
+                            }
                         }
                         _ => {}
                     }
@@ -213,7 +222,7 @@ impl Resolver {
                 return Some(sym);
             }
         }
-        None
+        self.symbols.module_symbols.get(name)
     }
 
     fn add_pattern_vars(&mut self, pattern: &Образец) {

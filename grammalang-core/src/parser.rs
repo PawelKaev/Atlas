@@ -106,7 +106,6 @@ impl Parser {
         let return_type = if self.eat(&TokenKind::Стрелка) { self.skip_insignificant(); self.parse_type().map(Box::new) } else { None };
         self.skip_insignificant();
         self.expect(&TokenKind::Двоеточие)?;
-        // НЕ пропускаем отступ — он нужен parse_block
         let body = self.parse_block()?;
         Some(CstNode::Функция { имя: name, параметры: parameters, возвращаемый_тип: return_type, тело: Box::new(body), модификаторы: modifiers, span: (start, self.pos) })
     }
@@ -134,7 +133,6 @@ impl Parser {
         let name = self.expect_identifier()?;
         self.skip_insignificant();
         self.expect(&TokenKind::Двоеточие)?;
-        // НЕ пропускаем отступ — он нужен parse_block
         let mut fields = Vec::new();
         while !self.is_at_end() && !self.check(&TokenKind::Функция) && !self.check(&TokenKind::Структура) && !self.check(&TokenKind::Тип) && !self.check(&TokenKind::Открыто) && !self.check(&TokenKind::Импорт) && !self.check(&TokenKind::КонецФайла) && !self.check(&TokenKind::ОтменаОтступа) {
             if let Some(ident) = self.eat_identifier() {
@@ -181,7 +179,6 @@ impl Parser {
         let _name = self.expect_identifier()?;
         self.skip_insignificant();
         self.expect(&TokenKind::Двоеточие)?;
-        // НЕ пропускаем отступ — он нужен parse_block
         let mut declarations = Vec::new();
         while !self.is_at_end() {
             self.skip_insignificant();
@@ -191,7 +188,18 @@ impl Parser {
         Some(CstNode::Модуль { объявления: declarations, span: (0, self.pos) })
     }
 
-    fn parse_expression(&mut self) -> Option<CstNode> { self.parse_assignment() }
+    fn parse_expression(&mut self) -> Option<CstNode> {
+        if self.check(&TokenKind::Пусть) { return self.parse_let(); }
+        self.parse_assignment()
+    }
+
+    fn parse_let(&mut self) -> Option<CstNode> {
+        self.expect(&TokenKind::Пусть)?;
+        let имя = self.expect_identifier()?;
+        self.expect(&TokenKind::Равно)?;
+        let значение = Box::new(self.parse_expression()?);
+        Some(CstNode::Присваивание { имя, изменяемая: false, значение })
+    }
 
     fn parse_assignment(&mut self) -> Option<CstNode> {
         let left = self.parse_pipeline()?;
@@ -279,10 +287,11 @@ impl Parser {
                 if self.check(&TokenKind::КруглаяОткрыто) {
                     let args = self.parse_arguments()?;
                     if is_uppercase {
-                        let fields = args.into_iter().enumerate()
-                            .map(|(i, expr)| (format!("_{}", i), expr))
-                            .collect();
-                        return Some(CstNode::КонструкторСтруктуры { имя: name, поля: fields });
+                        if args.len() == 1 {
+                            return Some(CstNode::КонструкторСуммы { имя: name, значение: Some(Box::new(args.into_iter().next().unwrap())) });
+                        } else {
+                            return Some(CstNode::КонструкторСуммы { имя: name, значение: None });
+                        }
                     } else {
                         return Some(CstNode::Вызов {
                             функция: Box::new(CstNode::Переменная(name)),
@@ -329,19 +338,10 @@ impl Parser {
         } else if self.eat(&TokenKind::Отступ) {
             loop {
                 if self.is_at_end() { break; }
-                if self.check(&TokenKind::ОтменаОтступа) {
-                    self.advance();
-                    break;
-                }
-                if self.check(&TokenKind::Отступ) {
-                    self.advance();
-                    continue;
-                }
-                if let Some(expr) = self.parse_expression() {
-                    expressions.push(expr);
-                } else {
-                    self.advance();
-                }
+                if self.check(&TokenKind::ОтменаОтступа) { self.advance(); break; }
+                if self.check(&TokenKind::Отступ) { self.advance(); continue; }
+                if let Some(expr) = self.parse_expression() { expressions.push(expr); }
+                else { self.advance(); }
             }
         } else {
             if let Some(expr) = self.parse_expression() { expressions.push(expr); }
@@ -503,11 +503,5 @@ impl Parser {
     fn error(&mut self, message: &str) {
         let span = self.peek().map(|t| t.span).unwrap_or(crate::token::Span { line: 0, column: 0, offset: 0 });
         self.errors.push(Diagnostic { kind: DiagnosticKind::Ошибка, message: message.to_string(), span, hint: None });
-    }
-    fn synchronize(&mut self) {
-        while !self.is_at_end() {
-            if self.check(&TokenKind::Функция) || self.check(&TokenKind::Структура) || self.check(&TokenKind::Тип) || self.check(&TokenKind::Открыто) { return; }
-            self.advance();
-        }
     }
 }

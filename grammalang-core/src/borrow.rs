@@ -1,9 +1,9 @@
 // grammalang-core/src/borrow.rs
 
+use crate::token::Span;
 use std::collections::{HashMap, HashSet};
 use crate::ast::*;
 use crate::error::{Diagnostic, DiagnosticKind};
-use crate::token::Span;
 
 /// Право доступа к переменной
 #[derive(Debug, Clone, PartialEq)]
@@ -85,9 +85,75 @@ impl BorrowChecker {
                 self.access = saved;
             }
 
-            Ast::Присваивание { имя, изменяемая, значение, .. } => {
+            Ast::БлокОбласти { выражения, последнее, замыкания, .. } => {
+                let saved = self.access.clone();
+
+                for expr in выражения {
+                    self.check_node(expr);
+                }
+                if let Some(last) = последнее {
+                    self.check_node(last);
+                }
+                
+                for захват in замыкания {
+                    match self.access.get(&захват.имя) {
+                        Some(Access::Владеет) => {
+                            if захват.по_ссылке {
+                                let region = self.fresh_region();
+                                let mut refs = HashSet::new();
+                                refs.insert(region.clone());
+                                self.access.insert(
+                                    захват.имя.clone(),
+                                    Access::ЗаимствованаНеизменяемо(refs),
+                                );
+                            } else {
+                                self.access.insert(захват.имя.clone(), Access::Перемещена);
+                            }
+                        }
+                        Some(Access::ЗаимствованаНеизменяемо(refs)) if !захват.изменяемый => {
+                            let mut new_refs = refs.clone();
+                            new_refs.insert(self.fresh_region());
+                            self.access.insert(захват.имя.clone(), Access::ЗаимствованаНеизменяемо(new_refs));
+                        }
+                        _ => {}
+                    }
+                }
+
+                self.access = saved;
+            }
+
+            Ast::Пусть { имя, значение, .. } => {
                 self.check_node(значение);
                 self.access.insert(имя.clone(), Access::Владеет);
+            }
+
+            Ast::Присваивание { имя, значение, .. } => {
+                self.check_node(значение);
+                self.access.insert(имя.clone(), Access::Владеет);
+            }
+
+            Ast::ПрисваиваниеСОперацией { имя, значение, .. } => {
+                self.check_node(значение);
+                if let Some(Access::Перемещена) = self.access.get(имя) {
+                    self.errors.push(Diagnostic {
+                        kind: DiagnosticKind::Ошибка,
+                        message: format!("Нельзя изменить '{}' — переменная перемещена", имя),
+                        span: *node.span(),
+                        hint: None,
+                    });
+                }
+            }
+
+            Ast::ПрисваиваниеОбразца { образец, значение, .. } => {
+                self.check_node(значение);
+                self.add_pattern_vars(образец);
+            }
+
+            Ast::ОбновлениеСтруктуры { объект, поля, .. } => {
+                self.check_node(объект);
+                for (_, value) in поля {
+                    self.check_node(value);
+                }
             }
 
             Ast::Заимствование { изменяемое, значение, span, .. } => {
@@ -226,6 +292,36 @@ impl BorrowChecker {
                 }
             }
 
+            Ast::Пока { условие, тело, .. } => {
+                self.check_node(условие);
+                self.check_node(тело);
+            }
+
+            Ast::ЦиклПока { условие, тело, .. } => {
+                self.check_node(условие);
+                self.check_node(тело);
+            }
+
+            Ast::ЦиклДля { переменная, итератор, тело, .. } => {
+                self.check_node(итератор);
+                let saved = self.access.clone();
+                self.access.insert(переменная.clone(), Access::Владеет);
+                self.check_node(тело);
+                self.access = saved;
+            }
+
+            Ast::Цикл { тело, .. } => {
+                self.check_node(тело);
+            }
+
+            Ast::Прервать { значение, .. } => {
+                if let Some(val) = значение {
+                    self.check_node(val);
+                }
+            }
+
+            Ast::Продолжить { .. } => {}
+
             Ast::Возврат { значение, .. } => {
                 if let Some(val) = значение {
                     self.check_node(val);
@@ -260,6 +356,15 @@ impl BorrowChecker {
                 }
             }
 
+            Ast::Лямбда { параметры, тело, .. } => {
+                let saved = self.access.clone();
+                for param in параметры {
+                    self.access.insert(param.имя.clone(), Access::Владеет);
+                }
+                self.check_node(тело);
+                self.access = saved;
+            }
+
             Ast::Переменная { имя, span, .. } => {
                 if let Some(Access::Перемещена) = self.access.get(имя) {
                     self.errors.push(Diagnostic {
@@ -271,7 +376,14 @@ impl BorrowChecker {
                 }
             }
 
-            _ => {}
+            Ast::Литерал { .. } => {}
+            Ast::Цитирование { .. } => {}
+            Ast::Вставка { .. } => {}
+            Ast::ВызовМакроса { .. } => {}
+            Ast::ОбъявлениеИмпорта { .. } => {}
+            Ast::ОбъявлениеВнешнейФункции { .. } => {}
+            Ast::ОбъявлениеСтруктуры { .. } => {}
+            Ast::ОбъявлениеСуммы { .. } => {}
         }
     }
 
@@ -288,6 +400,11 @@ impl BorrowChecker {
             Образец::Кортеж(элементы) | Образец::Список { элементы: элементы, .. } => {
                 for elem in элементы {
                     self.add_pattern_vars(elem);
+                }
+            }
+            Образец::Структура { поля, .. } => {
+                for (_, pattern) in поля {
+                    self.add_pattern_vars(pattern);
                 }
             }
             _ => {}
