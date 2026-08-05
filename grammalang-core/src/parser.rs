@@ -31,6 +31,9 @@ pub enum CstNode {
     ОбразецПодчёркивание,
     ОбразецЛитерал(String),
     ОбразецКонструктор { имя: String, вложенный: Option<Box<CstNode>> },
+    ОбразецИли(Box<CstNode>, Box<CstNode>),
+    ОбразецПривязка { имя: String, образец: Box<CstNode> },
+    ОбразецСтруктура { имя: String, поля: Vec<(String, CstNode)>, открытый: bool },
     ОбразецСписок { элементы: Vec<CstNode>, хвост: Option<Box<CstNode>> },
     ТипИмя(String),
     ТипПараметризованный { имя: String, параметры: Vec<CstNode> },
@@ -300,6 +303,10 @@ impl Parser {
                     }
                 }
                 
+                if self.check(&TokenKind::ФигурнаяОткрыто) && is_uppercase {
+                    return self.parse_struct_init(&name);
+                }
+                
                 Some(CstNode::Переменная(name))
             }
             TokenKind::ФигурнаяОткрыто => self.parse_block(),
@@ -312,6 +319,24 @@ impl Parser {
             TokenKind::КруглаяОткрыто => { self.advance(); let expr = self.parse_expression(); self.expect(&TokenKind::КруглаяЗакрыто)?; expr }
             _ => { self.error(&format!("Неожиданный токен: {}", token)); self.advance(); None }
         }
+    }
+    fn parse_struct_init(&mut self, name: &str) -> Option<CstNode> {
+        self.expect(&TokenKind::ФигурнаяОткрыто)?;
+        let mut fields = Vec::new();
+        if !self.check(&TokenKind::ФигурнаяЗакрыто) {
+            loop {
+                let field_name = self.expect_identifier()?;
+                let field_value = if self.eat(&TokenKind::Двоеточие) {
+                    self.parse_expression()?
+                } else {
+                    CstNode::Переменная(field_name.clone())
+                };
+                fields.push((field_name, field_value));
+                if !self.eat(&TokenKind::Запятая) { break; }
+            }
+        }
+        self.expect(&TokenKind::ФигурнаяЗакрыто)?;
+        Some(CstNode::КонструкторСтруктуры { имя: name.to_string(), поля: fields })
     }
 
     fn parse_arguments(&mut self) -> Option<Vec<CstNode>> {
@@ -380,22 +405,68 @@ impl Parser {
     }
 
     fn parse_pattern(&mut self) -> Option<CstNode> {
+        self.parse_pattern_or()
+    }
+
+    fn parse_pattern_or(&mut self) -> Option<CstNode> {
+        let mut left = self.parse_pattern_atom()?;
+        while self.eat(&TokenKind::ВертикальнаяЧерта) {
+            let right = self.parse_pattern_atom()?;
+            left = CstNode::ОбразецИли(Box::new(left), Box::new(right));
+        }
+        Some(left)
+    }
+
+    fn parse_pattern_atom(&mut self) -> Option<CstNode> {
         if self.eat(&TokenKind::Подчёркивание) { return Some(CstNode::ОбразецПодчёркивание); }
         if let Some(token) = self.peek() {
             match &token.kind {
                 TokenKind::Идентификатор(name) => {
                     let name = name.clone();
+                    let is_uppercase = name.chars().next().map_or(false, |c| c.is_uppercase());
                     self.advance();
+                    if self.check(&TokenKind::Собака) {
+                        self.advance();
+                        let inner = self.parse_pattern_atom()?;
+                        return Some(CstNode::ОбразецПривязка { имя: name, образец: Box::new(inner) });
+                    }
                     if self.check(&TokenKind::КруглаяОткрыто) {
                         self.advance();
                         let inner = self.parse_pattern();
                         self.expect(&TokenKind::КруглаяЗакрыто)?;
                         return Some(CstNode::ОбразецКонструктор { имя: name, вложенный: inner.map(Box::new) });
                     }
-                    if name.chars().next().map_or(false, |c| c.is_uppercase()) { return Some(CstNode::ОбразецКонструктор { имя: name, вложенный: None }); }
+                    if self.check(&TokenKind::ФигурнаяОткрыто) && is_uppercase {
+                        self.advance();
+                        let mut fields = Vec::new();
+                        let mut открытый = false;
+                        if !self.check(&TokenKind::ФигурнаяЗакрыто) {
+                            loop {
+                                if self.eat(&TokenKind::Многоточие) { открытый = true; break; }
+                                let field_name = self.expect_identifier()?;
+                                let field_pattern = if self.eat(&TokenKind::Двоеточие) {
+                                    self.parse_pattern()?
+                                } else {
+                                    CstNode::ОбразецПеременная(field_name.clone())
+                                };
+                                fields.push((field_name, field_pattern));
+                                if !self.eat(&TokenKind::Запятая) {
+                                    if self.eat(&TokenKind::Многоточие) { открытый = true; }
+                                    break;
+                                }
+                            }
+                        }
+                        self.expect(&TokenKind::ФигурнаяЗакрыто)?;
+                        return Some(CstNode::ОбразецСтруктура { имя: name, поля: fields, открытый });
+                    }
+                    if is_uppercase { return Some(CstNode::ОбразецКонструктор { имя: name, вложенный: None }); }
                     Some(CstNode::ОбразецПеременная(name))
                 }
                 TokenKind::Целое(_) | TokenKind::Строка(_) => { let lit = token.lexeme.clone(); self.advance(); Some(CstNode::ОбразецЛитерал(lit)) }
+                TokenKind::Ничего => {
+                    self.advance();
+                    Some(CstNode::ОбразецКонструктор { имя: "Ничего".to_string(), вложенный: None })
+                }
                 _ => { self.error("Ожидался образец"); None }
             }
         } else { None }
@@ -501,7 +572,22 @@ impl Parser {
         else { let found = self.peek().map(|t| t.lexeme.clone()).unwrap_or_default(); self.error(&format!("Ожидался идентификатор, найдено '{}'", found)); None }
     }
     fn error(&mut self, message: &str) {
-        let span = self.peek().map(|t| t.span).unwrap_or(crate::token::Span { line: 0, column: 0, offset: 0 });
+        let token = self.peek().cloned().unwrap_or(Token { kind: TokenKind::КонецФайла, lexeme: "".to_string(), span: crate::token::Span { line: 0, column: 0, offset: 0 } });
+        let span = token.span;
+        
+        let context_start = if self.pos > 5 { self.pos - 5 } else { 0 };
+        let context_end = usize::min(self.pos + 5, self.tokens.len());
+        let snippet: Vec<String> = self.tokens[context_start..context_end]
+            .iter()
+            .map(|t| format!("{:?}", t.kind))
+            .collect();
+        
+        eprintln!("--- GRAMMALANG PARSER CRASH DEBUG ---");
+        eprintln!("Сообщение: {}", message);
+        eprintln!("Лексема: '{}' в строке {}, колонка {}", token.lexeme, span.line, span.column);
+        eprintln!("Контекст токенов: {:?}", snippet);
+        eprintln!("-------------------------------------");
+        
         self.errors.push(Diagnostic { kind: DiagnosticKind::Ошибка, message: message.to_string(), span, hint: None });
     }
 }

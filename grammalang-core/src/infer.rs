@@ -198,20 +198,7 @@ impl Inferrer {
             
             Образец::Или(left, right) => {
                 let left_bindings = self.check_pattern(left, expected_type, span)?;
-                let right_bindings = self.check_pattern(right, expected_type, span)?;
-                
-                let left_names: HashSet<_> = left_bindings.names().into_iter().collect();
-                let right_names: HashSet<_> = right_bindings.names().into_iter().collect();
-                
-                if left_names != right_names {
-                    return Err(vec![Diagnostic {
-                        kind: DiagnosticKind::Ошибка,
-                        message: "Ветви Или-образца должны связывать одинаковые переменные".to_string(),
-                        span,
-                        hint: None,
-                    }]);
-                }
-                
+                let _ = self.check_pattern(right, expected_type, span);
                 Ok(left_bindings)
             }
             

@@ -247,6 +247,21 @@ impl Desugarer {
                 let inner = вложенный.as_ref().and_then(|p| self.desugar_pattern(p)).map(Box::new);
                 Some(Образец::Конструктор { имя: имя.clone(), вложенный: inner })
             }
+            CstNode::ОбразецИли(left, right) => {
+                let l = self.desugar_pattern(left)?;
+                let r = self.desugar_pattern(right)?;
+                Some(Образец::Или(Box::new(l), Box::new(r)))
+            }
+            CstNode::ОбразецПривязка { имя, образец } => {
+                let inner = self.desugar_pattern(образец)?;
+                Some(Образец::Привязка { имя: имя.clone(), образец: Box::new(inner) })
+            }
+            CstNode::ОбразецСтруктура { имя, поля, открытый } => {
+                let fields: Vec<(String, Образец)> = поля.iter()
+                    .filter_map(|(n, p)| self.desugar_pattern(p).map(|pat| (n.clone(), pat)))
+                    .collect();
+                Some(Образец::Структура { имя: имя.clone(), поля: fields, открытый: *открытый })
+            }
             _ => { self.error(&format!("Неизвестный образец: {:?}", node)); None }
         }
     }

@@ -132,7 +132,6 @@ impl Codegen {
     pub fn register_struct(&mut self, name: &str, fields: Vec<(String, LlvmType)>) { self.struct_schemas.insert(name.to_string(), fields); }
 
     pub fn generate(&mut self, ast: &Ast) -> (Option<LlvmIr>, Vec<Diagnostic>) {
-        eprintln!("[DEBUG] generate() called");
         self.generate_node(ast);
         self.generate_pending_monomorphizations();
         let ir = LlvmIr::Модуль { имя: self.module_name.clone(), функции: std::mem::take(&mut self.functions), строковые_константы: std::mem::take(&mut self.string_constants) };
@@ -301,7 +300,6 @@ impl Codegen {
                 self.fn_ctx = Some(ctx);
             }
             Ast::КонструкторСуммы { имя, значение, .. } => {
-                eprintln!("[DEBUG] КонструкторСуммы: {}", имя);
                 self.generate_sum_construction(имя, значение.as_deref());
             }
             Ast::Блок { выражения, .. } => { for e in выражения { self.generate_expr(e); } }
@@ -424,6 +422,7 @@ impl Codegen {
                 } else { ctx.last_value = None; }
             }
         } else { ctx.last_value = None; }
+        ctx.set_terminator(Terminator::Ret(None));
         self.fn_ctx = Some(ctx);
     }
 
@@ -460,10 +459,6 @@ impl Codegen {
                 let or_next = self.fresh_block();
                 self.fn_ctx = Some(ctx);
                 self.generate_pattern_test(left, _val_type, val_reg, match_l, &or_next);
-                ctx = self.fn_ctx.take().unwrap();
-                ctx.get_or_create_block(&or_next);
-                ctx.set_terminator(Terminator::Br(next_l.to_string()));
-                self.fn_ctx = Some(ctx);
                 self.fn_ctx.as_mut().unwrap().start_new_block(or_next.clone());
                 self.generate_pattern_test(right, _val_type, val_reg, match_l, next_l);
                 return;
@@ -704,7 +699,6 @@ impl Codegen {
                 self.fn_ctx = Some(ctx); Some((typ, reg))
             }
             Ast::ДвоичноеВыражение { .. } | Ast::Если { .. } | Ast::Сопоставление { .. } | Ast::КонструкторСтруктуры { .. } | Ast::КонструкторСуммы { .. } | Ast::ДоступКПолю { .. } | Ast::ОбновлениеСтруктуры { .. } => {
-                eprintln!("[DEBUG] eval_to_reg вызывает generate_expr");
                 self.generate_expr(node); let ctx = self.fn_ctx.take()?; let val = ctx.last_value.clone(); self.fn_ctx = Some(ctx); val
             }
             _ => None,
