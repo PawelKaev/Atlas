@@ -1,5 +1,5 @@
 // grammalang-core/src/infer.rs
-// Версия 2.0 — полноценная проверка образцов (patcheck)
+// Version 2.0 — full pattern checking (patcheck)
 
 use std::collections::{HashMap, HashSet};
 use crate::ast::*;
@@ -7,19 +7,19 @@ use crate::error::{Diagnostic, DiagnosticKind};
 use crate::token::Span;
 use crate::types::{Constraint, Substitution, fresh_var, occurs_in};
 
-type TypeContext = HashMap<String, Тип>;
+type TypeContext = HashMap<String, Type>;
 
 #[derive(Debug, Clone, Default)]
 pub struct BindingsMap {
-    bindings: Vec<(String, Тип)>,
+    bindings: Vec<(String, Type)>,
 }
 
 impl BindingsMap {
     pub fn new() -> Self { BindingsMap { bindings: Vec::new() } }
-    pub fn singleton(name: String, typ: Тип) -> Self { BindingsMap { bindings: vec![(name, typ)] } }
+    pub fn singleton(name: String, typ: Type) -> Self { BindingsMap { bindings: vec![(name, typ)] } }
     pub fn empty() -> Self { BindingsMap::new() }
     
-    pub fn insert(&mut self, name: String, typ: Тип) {
+    pub fn insert(&mut self, name: String, typ: Type) {
         self.bindings.push((name, typ));
     }
     
@@ -31,7 +31,7 @@ impl BindingsMap {
         self.bindings.iter().map(|(n, _)| n.clone()).collect()
     }
     
-    pub fn iter(&self) -> impl Iterator<Item = &(String, Тип)> {
+    pub fn iter(&self) -> impl Iterator<Item = &(String, Type)> {
         self.bindings.iter()
     }
     
@@ -46,50 +46,89 @@ pub struct Inferrer {
     context: TypeContext,
     constraints: Vec<Constraint>,
     errors: Vec<Diagnostic>,
-    expected_return_type: Option<Тип>,
-    concepts: HashMap<String, Vec<Тип>>,
-    struct_schemas: HashMap<String, Vec<(String, Тип)>>,
-    sum_schemas: HashMap<String, Vec<(String, Option<Тип>)>>,
+    expected_return_type: Option<Type>,
+    concepts: HashMap<String, Vec<Type>>,
+    struct_schemas: HashMap<String, Vec<(String, Type)>>,
+    sum_schemas: HashMap<String, Vec<(String, Option<Type>)>>,
 }
 
 impl Inferrer {
     pub fn new() -> Self {
         let mut concepts = HashMap::new();
-        concepts.insert("Число".to_string(), vec![Тип::Примитивный(ПримитивныйТип::Целое), Тип::Примитивный(ПримитивныйТип::Десятичное)]);
-        concepts.insert("Сравнимый".to_string(), vec![Тип::Примитивный(ПримитивныйТип::Целое), Тип::Примитивный(ПримитивныйТип::Десятичное), Тип::Примитивный(ПримитивныйТип::Строка), Тип::Примитивный(ПримитивныйТип::Булево), Тип::Примитивный(ПримитивныйТип::Символ)]);
-        concepts.insert("Строковый".to_string(), vec![Тип::Примитивный(ПримитивныйТип::Строка)]);
-        concepts.insert("Итерируемый".to_string(), vec![Тип::Массив { тип: Box::new(Тип::Переменная("T".to_string())), размер: None }, Тип::Срез { тип: Box::new(Тип::Переменная("T".to_string())) }, Тип::Диапазон]);
-        Inferrer { context: HashMap::new(), constraints: Vec::new(), errors: Vec::new(), expected_return_type: None, concepts, struct_schemas: HashMap::new(), sum_schemas: HashMap::new() }
+        concepts.insert("Num".to_string(), vec![
+            Type::Primitive(PrimitiveType::Int),
+            Type::Primitive(PrimitiveType::Float),
+        ]);
+        concepts.insert("Comparable".to_string(), vec![
+            Type::Primitive(PrimitiveType::Int),
+            Type::Primitive(PrimitiveType::Float),
+            Type::Primitive(PrimitiveType::String),
+            Type::Primitive(PrimitiveType::Bool),
+            Type::Primitive(PrimitiveType::Char),
+        ]);
+        concepts.insert("Stringable".to_string(), vec![
+            Type::Primitive(PrimitiveType::String),
+        ]);
+        concepts.insert("Iterable".to_string(), vec![
+            Type::Array { llvm_type: Box::new(Type::Variable("T".to_string())), size: None },
+            Type::Slice { llvm_type: Box::new(Type::Variable("T".to_string())) },
+            Type::Range,
+        ]);
+        Inferrer {
+            context: HashMap::new(),
+            constraints: Vec::new(),
+            errors: Vec::new(),
+            expected_return_type: None,
+            concepts,
+            struct_schemas: HashMap::new(),
+            sum_schemas: HashMap::new(),
+        }
     }
 
-    pub fn register_struct_schema(&mut self, name: &str, fields: Vec<(String, Тип)>) {
+    pub fn register_struct_schema(&mut self, name: &str, fields: Vec<(String, Type)>) {
         self.struct_schemas.insert(name.to_string(), fields);
     }
 
-    pub fn register_sum_schema(&mut self, name: &str, variants: Vec<(String, Option<Тип>)>) {
+    pub fn register_sum_schema(&mut self, name: &str, variants: Vec<(String, Option<Type>)>) {
         self.sum_schemas.insert(name.to_string(), variants);
     }
 
     pub fn infer(&mut self, ast: &Ast) -> (Option<Ast>, Vec<Diagnostic>) {
-        // Сначала собираем схемы из объявлений
         self.collect_schemas(ast);
         let typed = self.infer_node(ast);
-        let mut typed = match typed { Some(ast) => ast, None => return (None, std::mem::take(&mut self.errors)) };
+        let mut typed = match typed {
+            Some(ast) => ast,
+            None => return (None, std::mem::take(&mut self.errors)),
+        };
         match self.solve() {
-            Ok(mut sub) => { sub.compress_all(); apply_substitution_to_ast(&mut typed, &sub); (Some(typed), std::mem::take(&mut self.errors)) }
-            Err(mut solve_errors) => { self.errors.append(&mut solve_errors); (Some(typed), std::mem::take(&mut self.errors)) }
+            Ok(mut sub) => {
+                sub.compress_all();
+                apply_substitution_to_ast(&mut typed, &sub);
+                (Some(typed), std::mem::take(&mut self.errors))
+            }
+            Err(mut solve_errors) => {
+                self.errors.append(&mut solve_errors);
+                (Some(typed), std::mem::take(&mut self.errors))
+            }
         }
     }
 
     fn collect_schemas(&mut self, ast: &Ast) {
         match ast {
-            Ast::Модуль { объявления, .. } => { for d in объявления { self.collect_schemas(d); } }
-            Ast::ОбъявлениеСтруктуры { имя, поля, .. } => {
-                self.register_struct_schema(имя, поля.clone());
+            Ast::Module { declarations, .. } => {
+                for d in declarations {
+                    self.collect_schemas(d);
+                }
             }
-            Ast::ОбъявлениеСуммы { имя, варианты, .. } => {
-                let vars: Vec<(String, Option<Тип>)> = варианты.iter().map(|v| (v.имя.clone(), v.тип_данных.clone())).collect();
-                self.register_sum_schema(имя, vars);
+            Ast::StructDecl { name, fields, .. } => {
+                self.register_struct_schema(name, fields.clone());
+            }
+            Ast::SumDecl { name, variants, .. } => {
+                let vars: Vec<(String, Option<Type>)> = variants
+                    .iter()
+                    .map(|v| (v.name.clone(), v.data_type.clone()))
+                    .collect();
+                self.register_sum_schema(name, vars);
             }
             _ => {}
         }
@@ -99,186 +138,313 @@ impl Inferrer {
         let mut sub = Substitution::new();
         for constraint in std::mem::take(&mut self.constraints) {
             match constraint {
-                Constraint::Равенство(t1, t2, span) => { let t1 = sub.apply_mut(&t1); let t2 = sub.apply_mut(&t2); if let Err(mut errors) = self.unify(&t1, &t2, &mut sub) { for err in &mut errors { if err.span.line == 0 { err.span = span; } } return Err(errors); } }
-                Constraint::Концепт(typ, концепт, span) => { let resolved = sub.apply_mut(&typ); if !self.check_concept(&resolved, &концепт) { return Err(vec![Diagnostic { kind: DiagnosticKind::Ошибка, message: format!("Тип '{}' не удовлетворяет концепту '{}'", self.type_to_string(&resolved), концепт), span, hint: Some(format!("Концепт '{}' требует: {}", концепт, self.concept_types_string(&концепт))) }]); } }
+                Constraint::Equality(t1, t2, span) => {
+                    let t1 = sub.apply_mut(&t1);
+                    let t2 = sub.apply_mut(&t2);
+                    if let Err(mut errors) = self.unify(&t1, &t2, &mut sub) {
+                        for err in &mut errors {
+                            if err.span.line == 0 {
+                                err.span = span;
+                            }
+                        }
+                        return Err(errors);
+                    }
+                }
+                Constraint::Concept(typ, concept, span) => {
+                    let resolved = sub.apply_mut(&typ);
+                    if !self.check_concept(&resolved, &concept) {
+                        return Err(vec![Diagnostic {
+                            kind: DiagnosticKind::Error,
+                            message: format!(
+                                "Type '{}' does not satisfy concept '{}'",
+                                self.type_to_string(&resolved),
+                                concept
+                            ),
+                            span,
+                            hint: Some(format!(
+                                "Concept '{}' requires: {}",
+                                concept,
+                                self.concept_types_string(&concept)
+                            )),
+                        }]);
+                    }
+                }
                 _ => continue,
             }
         }
         Ok(sub)
     }
 
-    fn unify(&mut self, t1: &Тип, t2: &Тип, sub: &mut Substitution) -> Result<(), Vec<Diagnostic>> {
-        let t1 = sub.apply_mut(t1); let t2 = sub.apply_mut(t2);
-        if t1 == t2 { return Ok(()); }
+    fn unify(&mut self, t1: &Type, t2: &Type, sub: &mut Substitution) -> Result<(), Vec<Diagnostic>> {
+        let t1 = sub.apply_mut(t1);
+        let t2 = sub.apply_mut(t2);
+        if t1 == t2 {
+            return Ok(());
+        }
         match (&t1, &t2) {
-            (Тип::Переменная(v), other) | (other, Тип::Переменная(v)) => { if occurs_in(v, other) { return Err(vec![Diagnostic { kind: DiagnosticKind::Ошибка, message: format!("Бесконечный тип: '{}' содержит '{}'", v, self.type_to_string(other)), span: Span { line: 0, column: 0, offset: 0 }, hint: None }]); } sub.insert(v.clone(), other.clone()); Ok(()) }
-            (Тип::Примитивный(p1), Тип::Примитивный(p2)) => if p1 == p2 { Ok(()) } else { Err(vec![self.type_mismatch(&t1, &t2)]) }
-            (Тип::Функция { аргументы: a1, результат: r1 }, Тип::Функция { аргументы: a2, результат: r2 }) => { if a1.len() != a2.len() { return Err(vec![Diagnostic { kind: DiagnosticKind::Ошибка, message: format!("Арность: {} vs {}", a1.len(), a2.len()), span: Span { line: 0, column: 0, offset: 0 }, hint: None }]); } for (x, y) in a1.iter().zip(a2) { self.unify(x, y, sub)?; } self.unify(r1, r2, sub) }
-            (Тип::Запись(f1), Тип::Запись(f2)) => { if f1.len() != f2.len() { return Err(vec![Diagnostic { kind: DiagnosticKind::Ошибка, message: format!("Размер записи: {} vs {}", f1.len(), f2.len()), span: Span { line: 0, column: 0, offset: 0 }, hint: None }]); } for ((n1, t1), (n2, t2)) in f1.iter().zip(f2) { if n1 != n2 { return Err(vec![Diagnostic { kind: DiagnosticKind::Ошибка, message: format!("Поле '{}' vs '{}'", n1, n2), span: Span { line: 0, column: 0, offset: 0 }, hint: None }]); } self.unify(t1, t2, sub)?; } Ok(()) }
+            (Type::Variable(v), other) | (other, Type::Variable(v)) => {
+                if occurs_in(v, other) {
+                    return Err(vec![Diagnostic {
+                        kind: DiagnosticKind::Error,
+                        message: format!(
+                            "Infinite type: '{}' contains '{}'",
+                            v,
+                            self.type_to_string(other)
+                        ),
+                        span: Span { line: 0, column: 0, offset: 0 },
+                        hint: None,
+                    }]);
+                }
+                sub.insert(v.clone(), other.clone());
+                Ok(())
+            }
+            (Type::Primitive(p1), Type::Primitive(p2)) => {
+                if p1 == p2 {
+                    Ok(())
+                } else {
+                    Err(vec![self.type_mismatch(&t1, &t2)])
+                }
+            }
+            (Type::Fn { arguments: a1, result: r1 }, Type::Fn { arguments: a2, result: r2 }) => {
+                if a1.len() != a2.len() {
+                    return Err(vec![Diagnostic {
+                        kind: DiagnosticKind::Error,
+                        message: format!("Arity mismatch: {} vs {}", a1.len(), a2.len()),
+                        span: Span { line: 0, column: 0, offset: 0 },
+                        hint: None,
+                    }]);
+                }
+                for (x, y) in a1.iter().zip(a2) {
+                    self.unify(x, y, sub)?;
+                }
+                self.unify(r1, r2, sub)
+            }
+            (Type::Record(f1), Type::Record(f2)) => {
+                if f1.len() != f2.len() {
+                    return Err(vec![Diagnostic {
+                        kind: DiagnosticKind::Error,
+                        message: format!("Record size mismatch: {} vs {}", f1.len(), f2.len()),
+                        span: Span { line: 0, column: 0, offset: 0 },
+                        hint: None,
+                    }]);
+                }
+                for ((n1, t1), (n2, t2)) in f1.iter().zip(f2) {
+                    if n1 != n2 {
+                        return Err(vec![Diagnostic {
+                            kind: DiagnosticKind::Error,
+                            message: format!("Field '{}' vs '{}'", n1, n2),
+                            span: Span { line: 0, column: 0, offset: 0 },
+                            hint: None,
+                        }]);
+                    }
+                    self.unify(t1, t2, sub)?;
+                }
+                Ok(())
+            }
             _ => Err(vec![self.type_mismatch(&t1, &t2)]),
         }
     }
 
-    fn check_concept(&self, typ: &Тип, концепт: &str) -> bool { self.concepts.get(концепт).map_or(true, |allowed| allowed.iter().any(|a| self.types_match(typ, a))) }
-    fn types_match(&self, t1: &Тип, t2: &Тип) -> bool { match (t1, t2) { (Тип::Примитивный(p1), Тип::Примитивный(p2)) => p1 == p2, (Тип::Переменная(_), _) | (_, Тип::Переменная(_)) => true, _ => false } }
-    fn concept_types_string(&self, c: &str) -> String { self.concepts.get(c).map_or("любой".into(), |t| t.iter().map(|x| self.type_to_string(x)).collect::<Vec<_>>().join(", ")) }
+    fn check_concept(&self, typ: &Type, concept: &str) -> bool {
+        self.concepts
+            .get(concept)
+            .map_or(true, |allowed| allowed.iter().any(|a| self.types_match(typ, a)))
+    }
+
+    fn types_match(&self, t1: &Type, t2: &Type) -> bool {
+        match (t1, t2) {
+            (Type::Primitive(p1), Type::Primitive(p2)) => p1 == p2,
+            (Type::Variable(_), _) | (_, Type::Variable(_)) => true,
+            _ => false,
+        }
+    }
+
+    fn concept_types_string(&self, c: &str) -> String {
+        self.concepts
+            .get(c)
+            .map_or("any".into(), |t| {
+                t.iter()
+                    .map(|x| self.type_to_string(x))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+    }
 
     // ==================== check_pattern ====================
 
-    fn check_pattern(&mut self, pattern: &Образец, expected_type: &Тип, span: Span) -> Result<BindingsMap, Vec<Diagnostic>> {
+    fn check_pattern(
+        &mut self,
+        pattern: &Pattern,
+        expected_type: &Type,
+        span: Span,
+    ) -> Result<BindingsMap, Vec<Diagnostic>> {
         match pattern {
-            Образец::Переменная(name) => {
+            Pattern::Variable(name) => {
                 Ok(BindingsMap::singleton(name.clone(), expected_type.clone()))
             }
-            
-            Образец::Подчёркивание => {
-                Ok(BindingsMap::empty())
-            }
-            
-            Образец::Литерал(val) => {
+
+            Pattern::Wildcard => Ok(BindingsMap::empty()),
+
+            Pattern::Literal(val) => {
                 let lit_type = self.literal_type(val);
                 match self.unify_silent(expected_type, &lit_type) {
                     Ok(_) => Ok(BindingsMap::empty()),
                     Err(e) => Err(vec![e]),
                 }
             }
-            
-            Образец::Конструктор { имя, вложенный } => {
+
+            Pattern::Constructor { name, nested } => {
                 let variants = self.resolve_sum_variants(expected_type);
-                
-                let variant = variants.iter().find(|(n, _)| n == имя)
+
+                let variant = variants
+                    .iter()
+                    .find(|(n, _)| n == name)
                     .ok_or_else(|| vec![Diagnostic {
-                        kind: DiagnosticKind::Ошибка,
-                        message: format!("Вариант '{}' не найден в типе '{}'", имя, self.type_to_string(expected_type)),
+                        kind: DiagnosticKind::Error,
+                        message: format!(
+                            "Variant '{}' not found in type '{}'",
+                            name,
+                            self.type_to_string(expected_type)
+                        ),
                         span,
                         hint: None,
                     }])?;
-                
-                match (&variant.1, вложенный) {
+
+                match (&variant.1, nested) {
                     (Some(var_type), Some(inner_pattern)) => {
                         self.check_pattern(inner_pattern, var_type, span)
                     }
                     (None, None) => Ok(BindingsMap::empty()),
                     (Some(_), None) => Err(vec![Diagnostic {
-                        kind: DiagnosticKind::Ошибка,
-                        message: format!("Вариант '{}' требует вложенный образец", имя),
+                        kind: DiagnosticKind::Error,
+                        message: format!("Variant '{}' requires a nested pattern", name),
                         span,
                         hint: None,
                     }]),
                     (None, Some(_)) => Err(vec![Diagnostic {
-                        kind: DiagnosticKind::Ошибка,
-                        message: format!("Вариант '{}' не принимает вложенный образец", имя),
+                        kind: DiagnosticKind::Error,
+                        message: format!("Variant '{}' does not accept a nested pattern", name),
                         span,
                         hint: None,
                     }]),
                 }
             }
-            
-            Образец::Структура { имя, поля, открытый: _ } => {
-                let struct_fields = self.resolve_struct_fields(expected_type, имя);
-                
+
+            Pattern::Struct { name, fields, open: _ } => {
+                let struct_fields = self.resolve_struct_fields(expected_type, name);
+
                 let mut bindings = BindingsMap::empty();
-                
-                for (field_name, field_pattern) in поля {
-                    let field_type = struct_fields.iter()
+
+                for (field_name, field_pattern) in fields {
+                    let field_type = struct_fields
+                        .iter()
                         .find(|(n, _)| n == field_name)
                         .map(|(_, t)| t.clone())
                         .ok_or_else(|| vec![Diagnostic {
-                            kind: DiagnosticKind::Ошибка,
-                            message: format!("Поле '{}' не найдено в структуре '{}'", field_name, имя),
+                            kind: DiagnosticKind::Error,
+                            message: format!(
+                                "Field '{}' not found in struct '{}'",
+                                field_name, name
+                            ),
                             span,
                             hint: None,
                         }])?;
-                    
+
                     bindings.merge(self.check_pattern(field_pattern, &field_type, span)?);
                 }
-                
+
                 Ok(bindings)
             }
-            
-            Образец::Или(left, right) => {
+
+            Pattern::Or(left, right) => {
                 let left_bindings = self.check_pattern(left, expected_type, span)?;
                 let _ = self.check_pattern(right, expected_type, span);
                 Ok(left_bindings)
             }
-            
-            Образец::Привязка { имя, образец } => {
-                let mut bindings = self.check_pattern(образец, expected_type, span)?;
-                bindings.insert(имя.clone(), expected_type.clone());
+
+            Pattern::Binding { name, pattern } => {
+                let mut bindings = self.check_pattern(pattern, expected_type, span)?;
+                bindings.insert(name.clone(), expected_type.clone());
                 Ok(bindings)
             }
-            
-            Образец::Кортеж(элементы) => {
+
+            Pattern::Tuple(elements) => {
                 let tuple_types = match expected_type {
-                    Тип::Кортеж(types) => types.clone(),
+                    Type::Tuple(types) => types.clone(),
                     _ => return Err(vec![Diagnostic {
-                        kind: DiagnosticKind::Ошибка,
-                        message: "Кортежный образец требует кортежный тип".to_string(),
+                        kind: DiagnosticKind::Error,
+                        message: "Tuple pattern requires a tuple type".to_string(),
                         span,
                         hint: None,
                     }]),
                 };
-                
-                if элементы.len() != tuple_types.len() {
+
+                if elements.len() != tuple_types.len() {
                     return Err(vec![Diagnostic {
-                        kind: DiagnosticKind::Ошибка,
-                        message: format!("Несовпадение длины кортежа: {} vs {}", элементы.len(), tuple_types.len()),
+                        kind: DiagnosticKind::Error,
+                        message: format!(
+                            "Tuple length mismatch: {} vs {}",
+                            elements.len(),
+                            tuple_types.len()
+                        ),
                         span,
                         hint: None,
                     }]);
                 }
-                
+
                 let mut bindings = BindingsMap::empty();
-                for (elem_pattern, elem_type) in элементы.iter().zip(tuple_types.iter()) {
+                for (elem_pattern, elem_type) in elements.iter().zip(tuple_types.iter()) {
                     bindings.merge(self.check_pattern(elem_pattern, elem_type, span)?);
                 }
                 Ok(bindings)
             }
-            
+
             _ => Err(vec![Diagnostic {
-                kind: DiagnosticKind::Ошибка,
-                message: format!("Неподдерживаемый образец: {:?}", pattern),
+                kind: DiagnosticKind::Error,
+                message: format!("Unsupported pattern: {:?}", pattern),
                 span,
                 hint: None,
             }]),
         }
     }
 
-    fn resolve_sum_variants(&self, expected_type: &Тип) -> Vec<(String, Option<Тип>)> {
+    fn resolve_sum_variants(&self, expected_type: &Type) -> Vec<(String, Option<Type>)> {
         match expected_type {
-            Тип::Сумма(v) => v.clone(),
-            Тип::Переменная(name) => self.sum_schemas.get(name).cloned().unwrap_or_default(),
-            Тип::Параметризованный { имя, .. } => self.sum_schemas.get(имя).cloned().unwrap_or_default(),
+            Type::Sum(v) => v.clone(),
+            Type::Variable(name) => self.sum_schemas.get(name).cloned().unwrap_or_default(),
+            Type::Parameterized { name, .. } => self.sum_schemas.get(name).cloned().unwrap_or_default(),
             _ => Vec::new(),
         }
     }
 
-    fn resolve_struct_fields(&self, expected_type: &Тип, _struct_name: &str) -> Vec<(String, Тип)> {
+    fn resolve_struct_fields(&self, expected_type: &Type, _struct_name: &str) -> Vec<(String, Type)> {
         match expected_type {
-            Тип::Запись(f) => f.clone(),
-            Тип::Переменная(name) => self.struct_schemas.get(name).cloned().unwrap_or_default(),
-            Тип::Параметризованный { имя, .. } => self.struct_schemas.get(имя).cloned().unwrap_or_default(),
+            Type::Record(f) => f.clone(),
+            Type::Variable(name) => self.struct_schemas.get(name).cloned().unwrap_or_default(),
+            Type::Parameterized { name, .. } => self.struct_schemas.get(name).cloned().unwrap_or_default(),
             _ => Vec::new(),
         }
     }
 
-    fn unify_silent(&self, t1: &Тип, t2: &Тип) -> Result<(), Diagnostic> {
-        if t1 == t2 { return Ok(()); }
+    fn unify_silent(&self, t1: &Type, t2: &Type) -> Result<(), Diagnostic> {
+        if t1 == t2 {
+            return Ok(());
+        }
         match (t1, t2) {
-            (Тип::Переменная(_), _) | (_, Тип::Переменная(_)) => Ok(()),
-            (Тип::Примитивный(p1), Тип::Примитивный(p2)) if p1 == p2 => Ok(()),
+            (Type::Variable(_), _) | (_, Type::Variable(_)) => Ok(()),
+            (Type::Primitive(p1), Type::Primitive(p2)) if p1 == p2 => Ok(()),
             _ => Err(self.type_mismatch(t1, t2)),
         }
     }
 
-    fn literal_type(&self, val: &Значение) -> Тип {
+    fn literal_type(&self, val: &Value) -> Type {
         match val {
-            Значение::Целое(_) => Тип::Примитивный(ПримитивныйТип::Целое),
-            Значение::Десятичное(_) => Тип::Примитивный(ПримитивныйТип::Десятичное),
-            Значение::Строка(_) => Тип::Примитивный(ПримитивныйТип::Строка),
-            Значение::Булево(_) => Тип::Примитивный(ПримитивныйТип::Булево),
-            Значение::Символ(_) => Тип::Примитивный(ПримитивныйТип::Символ),
-            Значение::Ничего => Тип::Пустой,
+            Value::Int(_) => Type::Primitive(PrimitiveType::Int),
+            Value::Float(_) => Type::Primitive(PrimitiveType::Float),
+            Value::String(_) => Type::Primitive(PrimitiveType::String),
+            Value::Bool(_) => Type::Primitive(PrimitiveType::Bool),
+            Value::Char(_) => Type::Primitive(PrimitiveType::Char),
+            Value::Nil => Type::Void,
         }
     }
 
@@ -286,102 +452,186 @@ impl Inferrer {
 
     fn infer_node(&mut self, node: &Ast) -> Option<Ast> {
         match node {
-            Ast::Модуль { имя, объявления, span } => { Some(Ast::Модуль { имя: имя.clone(), объявления: объявления.iter().filter_map(|d| self.infer_node(d)).collect(), span: *span }) }
-            Ast::ОбъявлениеФункции { имя, параметры_типа, параметры, возвращаемый_тип, тело, открыто, span } => {
-                let saved = self.expected_return_type.clone(); self.expected_return_type = возвращаемый_тип.clone();
+            Ast::Module { name, declarations, span } => {
+                Some(Ast::Module {
+                    name: name.clone(),
+                    declarations: declarations.iter().filter_map(|d| self.infer_node(d)).collect(),
+                    span: *span,
+                })
+            }
+            Ast::FnDecl { name, type_params, params, return_type, body, public, span } => {
+                let saved = self.expected_return_type.clone();
+                self.expected_return_type = return_type.clone();
                 let mut type_param_map = HashMap::new();
-                for tp in параметры_типа { let v = fresh_var(); type_param_map.insert(tp.имя.clone(), v.clone()); self.context.insert(tp.имя.clone(), v); }
-                let resolved_params: Vec<Параметр> = параметры.iter().map(|p| Параметр { имя: p.имя.clone(), тип: substitute_type_vars(&p.тип, &type_param_map), изменяемый: p.изменяемый }).collect();
+                for tp in type_params {
+                    let v = fresh_var();
+                    type_param_map.insert(tp.name.clone(), v.clone());
+                    self.context.insert(tp.name.clone(), v);
+                }
+                let resolved_params: Vec<Parameter> = params
+                    .iter()
+                    .map(|p| Parameter {
+                        name: p.name.clone(),
+                        llvm_type: substitute_type_vars(&p.llvm_type, &type_param_map),
+                        mutable: p.mutable,
+                    })
+                    .collect();
                 let mut saved_vars = Vec::new();
-                for p in &resolved_params { let t = if p.тип != Тип::Пустой { p.тип.clone() } else { fresh_var() }; saved_vars.push((p.имя.clone(), self.context.insert(p.имя.clone(), t))); }
-                let typed_body = self.infer_node(тело)?;
-                for (name, old) in saved_vars { if let Some(t) = old { self.context.insert(name, t); } else { self.context.remove(&name); } }
+                for p in &resolved_params {
+                    let t = if p.llvm_type != Type::Void {
+                        p.llvm_type.clone()
+                    } else {
+                        fresh_var()
+                    };
+                    saved_vars.push((p.name.clone(), self.context.insert(p.name.clone(), t)));
+                }
+                let typed_body = self.infer_node(body)?;
+                for (name, old) in saved_vars {
+                    if let Some(t) = old {
+                        self.context.insert(name, t);
+                    } else {
+                        self.context.remove(&name);
+                    }
+                }
                 self.expected_return_type = saved;
-                Some(Ast::ОбъявлениеФункции { имя: имя.clone(), параметры_типа: параметры_типа.clone(), параметры: resolved_params, возвращаемый_тип: возвращаемый_тип.clone(), тело: Box::new(typed_body), открыто: *открыто, span: *span })
+                Some(Ast::FnDecl {
+                    name: name.clone(),
+                    type_params: type_params.clone(),
+                    params: resolved_params,
+                    return_type: return_type.clone(),
+                    body: Box::new(typed_body),
+                    public: *public,
+                    span: *span,
+                })
             }
-            Ast::Блок { выражения, span } => { Some(Ast::Блок { выражения: выражения.iter().filter_map(|e| self.infer_node(e)).collect(), span: *span }) }
-            Ast::Пусть { имя, тип_аннотация, изменяемая, значение, span } | Ast::Присваивание { имя, тип_аннотация, изменяемая, значение, span } => {
-                let typed_val = self.infer_node(значение)?; let _vt = self.get_type(&typed_val).unwrap_or_else(fresh_var);
-                if let (Some(annot), Some(ref vtp)) = (тип_аннотация, &self.get_type(&typed_val)) { self.constraints.push(Constraint::Равенство(vtp.clone(), annot.clone(), *span)); }
-                let ft = тип_аннотация.clone().or_else(|| self.get_type(&typed_val)).unwrap_or_else(fresh_var);
-                self.context.insert(имя.clone(), ft.clone());
-                Some(Ast::Пусть { имя: имя.clone(), тип_аннотация: Some(ft.clone()), изменяемая: *изменяемая, значение: Box::new(typed_val), span: *span })
+            Ast::Block { expressions, span } => {
+                Some(Ast::Block {
+                    expressions: expressions.iter().filter_map(|e| self.infer_node(e)).collect(),
+                    span: *span,
+                })
             }
-            Ast::ПрисваиваниеСОперацией { имя, оператор, значение, span } => {
-                let typed_val = self.infer_node(значение)?; let vt = self.get_type(&typed_val).unwrap_or_else(fresh_var);
-                if let Some(var_type) = self.context.get(имя) { self.constraints.push(Constraint::Равенство(var_type.clone(), vt, *span)); }
-                Some(Ast::ПрисваиваниеСОперацией { имя: имя.clone(), оператор: оператор.clone(), значение: Box::new(typed_val), span: *span })
+            Ast::Let { name, type_annotation, mutable, value, span }
+            | Ast::Assign { name, type_annotation, mutable, value, span } => {
+                let typed_val = self.infer_node(value)?;
+                let _vt = self.get_type(&typed_val).unwrap_or_else(fresh_var);
+                if let (Some(annot), Some(ref vtp)) = (type_annotation, &self.get_type(&typed_val)) {
+                    self.constraints.push(Constraint::Equality(vtp.clone(), annot.clone(), *span));
+                }
+                let ft = type_annotation
+                    .clone()
+                    .or_else(|| self.get_type(&typed_val))
+                    .unwrap_or_else(fresh_var);
+                self.context.insert(name.clone(), ft.clone());
+                Some(Ast::Let {
+                    name: name.clone(),
+                    type_annotation: Some(ft.clone()),
+                    mutable: *mutable,
+                    value: Box::new(typed_val),
+                    span: *span,
+                })
             }
-            Ast::ПрисваиваниеОбразца { образец, значение, span } => {
-                let typed_val = self.infer_node(значение)?;
+            Ast::OpAssign { name, operator, value, span } => {
+                let typed_val = self.infer_node(value)?;
                 let vt = self.get_type(&typed_val).unwrap_or_else(fresh_var);
-                if let Ok(bindings) = self.check_pattern(образец, &vt, *span) {
+                if let Some(var_type) = self.context.get(name) {
+                    self.constraints.push(Constraint::Equality(var_type.clone(), vt, *span));
+                }
+                Some(Ast::OpAssign {
+                    name: name.clone(),
+                    operator: operator.clone(),
+                    value: Box::new(typed_val),
+                    span: *span,
+                })
+            }
+            Ast::PatternAssign { pattern, value, span } => {
+                let typed_val = self.infer_node(value)?;
+                let vt = self.get_type(&typed_val).unwrap_or_else(fresh_var);
+                if let Ok(bindings) = self.check_pattern(pattern, &vt, *span) {
                     bindings.into_context(&mut self.context);
                 }
-                Some(Ast::ПрисваиваниеОбразца { образец: образец.clone(), значение: Box::new(typed_val), span: *span })
+                Some(Ast::PatternAssign {
+                    pattern: pattern.clone(),
+                    value: Box::new(typed_val),
+                    span: *span,
+                })
             }
 
-            // Обновление структуры
-            Ast::ОбновлениеСтруктуры { объект, поля, span, .. } => {
-                let typed_obj = self.infer_node(объект)?;
+            Ast::StructUpdate { object, fields, span, .. } => {
+                let typed_obj = self.infer_node(object)?;
                 let obj_type = self.get_type(&typed_obj).unwrap_or_else(fresh_var);
-                if let Тип::Запись(existing_fields) = &obj_type {
-                    for (name, _) in поля {
+                if let Type::Record(existing_fields) = &obj_type {
+                    for (name, _) in fields {
                         if !existing_fields.iter().any(|(n, _)| n == name) {
-                            self.errors.push(Diagnostic { kind: DiagnosticKind::Ошибка, message: format!("Поле '{}' не найдено в структуре", name), span: *span, hint: None });
+                            self.errors.push(Diagnostic {
+                                kind: DiagnosticKind::Error,
+                                message: format!("Field '{}' not found in struct", name),
+                                span: *span,
+                                hint: None,
+                            });
                             return None;
                         }
                     }
-                    let typed_fields: Vec<(String, Ast)> = поля.iter().map(|(n, v)| self.infer_node(v).map(|ast| (n.clone(), ast))).collect::<Option<Vec<_>>>()?;
-                    Some(Ast::ОбновлениеСтруктуры { объект: Box::new(typed_obj), поля: typed_fields, тип: Some(obj_type.clone()), span: *span })
+                    let typed_fields: Vec<(String, Ast)> = fields
+                        .iter()
+                        .map(|(n, v)| self.infer_node(v).map(|ast| (n.clone(), ast)))
+                        .collect::<Option<Vec<_>>>()?;
+                    Some(Ast::StructUpdate {
+                        object: Box::new(typed_obj),
+                        fields: typed_fields,
+                        llvm_type: Some(obj_type.clone()),
+                        span: *span,
+                    })
                 } else {
-                    self.errors.push(Diagnostic { kind: DiagnosticKind::Ошибка, message: "Обновление структуры возможно только для записи".to_string(), span: *span, hint: None });
+                    self.errors.push(Diagnostic {
+                        kind: DiagnosticKind::Error,
+                        message: "Struct update is only possible for records".to_string(),
+                        span: *span,
+                        hint: None,
+                    });
                     None
                 }
             }
 
-            // Сопоставление с проверкой образцов
-            Ast::Сопоставление { значение, ветки, span, .. } => {
-                let typed_val = self.infer_node(значение)?;
+            Ast::Match { value, arms, span, .. } => {
+                let typed_val = self.infer_node(value)?;
                 let val_type = self.get_type(&typed_val).unwrap_or_else(fresh_var);
-                
+
                 let mut typed_branches = Vec::new();
-                let mut result_type = fresh_var();
-                let mut first_branch_type: Option<Тип> = None;
-                
-                for ветка in ветки {
-                    // Проверяем образец
-                    match self.check_pattern(&ветка.образец, &val_type, *span) {
+                let mut result_type: Option<Type> = None;
+
+                for arm in arms {
+                    match self.check_pattern(&arm.pattern, &val_type, *span) {
                         Ok(bindings) => {
-                            // Сохраняем текущий контекст
                             let saved_context = self.context.clone();
-                            
-                            // Добавляем привязки в контекст
                             bindings.into_context(&mut self.context);
-                            
-                            // Проверяем условие-охранник
-                            let typed_guard = ветка.условие.as_ref()
+
+                            let typed_guard = arm
+                                .condition
+                                .as_ref()
                                 .and_then(|g| self.infer_node(g))
                                 .map(Box::new);
-                            
-                            // Выводим тип тела
-                            let typed_body = self.infer_node(&ветка.тело)?;
+
+                            let typed_body = self.infer_node(&arm.body)?;
                             let body_type = self.get_type(&typed_body).unwrap_or_else(fresh_var);
-                            
-                            // Унифицируем с результатом
-                            if let Some(ref first) = first_branch_type {
-                                self.constraints.push(Constraint::Равенство(body_type.clone(), first.clone(), *span));
-                            } else {
-                                first_branch_type = Some(body_type.clone());
+
+                            match &result_type {
+                                Some(first) => {
+                                    self.constraints.push(Constraint::Equality(
+                                        body_type.clone(),
+                                        first.clone(),
+                                        *span,
+                                    ));
+                                }
+                                None => {
+                                    result_type = Some(body_type);
+                                }
                             }
-                            
-                            // Восстанавливаем контекст
+
                             self.context = saved_context;
-                            
-                            typed_branches.push(ВеткаСопоставления {
-                                образец: ветка.образец.clone(),
-                                условие: typed_guard,
-                                тело: Box::new(typed_body),
+                            typed_branches.push(MatchArm {
+                                pattern: arm.pattern.clone(),
+                                condition: typed_guard,
+                                body: Box::new(typed_body),
                             });
                         }
                         Err(mut errs) => {
@@ -390,115 +640,363 @@ impl Inferrer {
                         }
                     }
                 }
-                
-                result_type = first_branch_type.unwrap_or(Тип::Пустой);
-                Some(Ast::Сопоставление { значение: Box::new(typed_val), ветки: typed_branches, тип: Some(result_type), span: *span })
+
+                let final_type = result_type.unwrap_or(Type::Void);
+                Some(Ast::Match {
+                    value: Box::new(typed_val),
+                    arms: typed_branches,
+                    llvm_type: Some(final_type.clone()),
+                    span: *span,
+                })
             }
 
-            Ast::ДвоичноеВыражение { левое, оператор, правое, span, .. } => {
-                let tl = self.infer_node(левое)?; let tr = self.infer_node(правое)?;
-                let lt = self.get_type(&tl).unwrap_or_else(fresh_var); let rt = self.get_type(&tr).unwrap_or_else(fresh_var);
-                let result = match оператор {
-                    БинарныйОператор::Сложение | БинарныйОператор::Вычитание | БинарныйОператор::Умножение | БинарныйОператор::Деление | БинарныйОператор::Остаток => { self.constraints.push(Constraint::Равенство(lt.clone(), rt.clone(), *span)); lt.clone() }
-                    БинарныйОператор::Равно | БинарныйОператор::НеРавно | БинарныйОператор::Меньше | БинарныйОператор::Больше | БинарныйОператор::МеньшеРавно | БинарныйОператор::БольшеРавно => { self.constraints.push(Constraint::Равенство(lt.clone(), rt.clone(), *span)); Тип::Примитивный(ПримитивныйТип::Булево) }
-                    БинарныйОператор::И | БинарныйОператор::Или => Тип::Примитивный(ПримитивныйТип::Булево),
+            Ast::BinExpr { left, operator, right, span, .. } => {
+                let tl = self.infer_node(left)?;
+                let tr = self.infer_node(right)?;
+                let lt = self.get_type(&tl).unwrap_or_else(fresh_var);
+                let rt = self.get_type(&tr).unwrap_or_else(fresh_var);
+                let result = match operator {
+                    BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem => {
+                        self.constraints.push(Constraint::Equality(lt.clone(), rt.clone(), *span));
+                        lt.clone()
+                    }
+                    BinOp::Eq | BinOp::Neq | BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge => {
+                        self.constraints.push(Constraint::Equality(lt.clone(), rt.clone(), *span));
+                        Type::Primitive(PrimitiveType::Bool)
+                    }
+                    BinOp::And | BinOp::Or => Type::Primitive(PrimitiveType::Bool),
                     _ => lt.clone(),
                 };
-                Some(Ast::ДвоичноеВыражение { левое: Box::new(tl), оператор: оператор.clone(), правое: Box::new(tr), тип: Some(result), span: *span })
+                Some(Ast::BinExpr {
+                    left: Box::new(tl),
+                    operator: operator.clone(),
+                    right: Box::new(tr),
+                    llvm_type: Some(result),
+                    span: *span,
+                })
             }
-            Ast::Если { условие, то, иначе, span, .. } => {
-                let tc = self.infer_node(условие)?; let tt = self.infer_node(то)?;
-                let te = иначе.as_ref().and_then(|e| self.infer_node(e));
-                let ct = self.get_type(&tc).unwrap_or_else(fresh_var); self.constraints.push(Constraint::Равенство(ct, Тип::Примитивный(ПримитивныйТип::Булево), *span));
+            Ast::If { condition, then, else_arm, span, .. } => {
+                let tc = self.infer_node(condition)?;
+                let tt = self.infer_node(then)?;
+                let te = else_arm.as_ref().and_then(|e| self.infer_node(e));
+                let ct = self.get_type(&tc).unwrap_or_else(fresh_var);
+                self.constraints.push(Constraint::Equality(
+                    ct,
+                    Type::Primitive(PrimitiveType::Bool),
+                    *span,
+                ));
                 let tt_type = self.get_type(&tt).unwrap_or_else(fresh_var);
-                let result = if let Some(ref te_ast) = te { let et = self.get_type(te_ast).unwrap_or_else(fresh_var); self.constraints.push(Constraint::Равенство(tt_type.clone(), et, *span)); tt_type } else { Тип::Пустой };
-                Some(Ast::Если { условие: Box::new(tc), то: Box::new(tt), иначе: te.map(Box::new), тип: Some(result), span: *span })
+                let result = if let Some(ref te_ast) = te {
+                    let et = self.get_type(te_ast).unwrap_or_else(fresh_var);
+                    self.constraints.push(Constraint::Equality(tt_type.clone(), et, *span));
+                    tt_type
+                } else {
+                    Type::Void
+                };
+                Some(Ast::If {
+                    condition: Box::new(tc),
+                    then: Box::new(tt),
+                    else_arm: te.map(Box::new),
+                    llvm_type: Some(result),
+                    span: *span,
+                })
             }
-            Ast::Пока { условие, тело, span } | Ast::ЦиклПока { условие, тело, span, .. } => {
-                let tc = self.infer_node(условие)?; let tb = self.infer_node(тело)?;
-                self.constraints.push(Constraint::Равенство(self.get_type(&tc).unwrap_or_else(fresh_var), Тип::Примитивный(ПримитивныйТип::Булево), *span));
-                Some(Ast::Пока { условие: Box::new(tc), тело: Box::new(tb), span: *span })
+            Ast::While { condition, body, span }
+            | Ast::LoopWhile { condition, body, span, .. } => {
+                let tc = self.infer_node(condition)?;
+                let tb = self.infer_node(body)?;
+                self.constraints.push(Constraint::Equality(
+                    self.get_type(&tc).unwrap_or_else(fresh_var),
+                    Type::Primitive(PrimitiveType::Bool),
+                    *span,
+                ));
+                Some(Ast::While {
+                    condition: Box::new(tc),
+                    body: Box::new(tb),
+                    span: *span,
+                })
             }
-            Ast::Вызов { функция, аргументы, span, .. } => {
-                let tf = self.infer_node(функция)?; let ta: Vec<Ast> = аргументы.iter().filter_map(|a| self.infer_node(a)).collect();
+            Ast::Call { function, arguments, span, .. } => {
+                let tf = self.infer_node(function)?;
+                let ta: Vec<Ast> = arguments.iter().filter_map(|a| self.infer_node(a)).collect();
                 let result = fresh_var();
-                let arg_types: Vec<Тип> = ta.iter().map(|a| self.get_type(a).unwrap_or_else(fresh_var)).collect();
-                let ft = Тип::Функция { аргументы: arg_types, результат: Box::new(result.clone()) };
-                self.constraints.push(Constraint::Равенство(self.get_type(&tf).unwrap_or_else(fresh_var), ft, *span));
-                Some(Ast::Вызов { функция: Box::new(tf), аргументы: ta, тип: Some(result), span: *span })
+                let arg_types: Vec<Type> = ta
+                    .iter()
+                    .map(|a| self.get_type(a).unwrap_or_else(fresh_var))
+                    .collect();
+                let ft = Type::Fn {
+                    arguments: arg_types,
+                    result: Box::new(result.clone()),
+                };
+                self.constraints.push(Constraint::Equality(
+                    self.get_type(&tf).unwrap_or_else(fresh_var),
+                    ft,
+                    *span,
+                ));
+                Some(Ast::Call {
+                    function: Box::new(tf),
+                    arguments: ta,
+                    llvm_type: Some(result),
+                    span: *span,
+                })
             }
-            Ast::Переменная { имя, span, .. } => { let t = self.context.get(имя).cloned().unwrap_or_else(fresh_var); Some(Ast::Переменная { имя: имя.clone(), тип: Some(t), span: *span }) }
-            Ast::Литерал { значение, span } => { Some(Ast::Литерал { значение: значение.clone(), span: *span }) }
-            Ast::КонструкторСтруктуры { имя, поля, span, .. } => {
-                let tf: Vec<(String, Ast)> = поля.iter().filter_map(|(n, v)| self.infer_node(v).map(|ast| (n.clone(), ast))).collect();
-                let ft: Vec<(String, Тип)> = tf.iter().map(|(n, v)| (n.clone(), self.get_type(v).unwrap_or_else(fresh_var))).collect();
-                Some(Ast::КонструкторСтруктуры { имя: имя.clone(), поля: tf, тип: Some(Тип::Запись(ft)), span: *span })
+            Ast::Variable { name, span, .. } => {
+                let t = self.context.get(name).cloned().unwrap_or_else(fresh_var);
+                Some(Ast::Variable {
+                    name: name.clone(),
+                    llvm_type: Some(t),
+                    span: *span,
+                })
             }
-            Ast::КонструкторСуммы { имя, значение, span, .. } => {
-                let typed_val = значение.as_ref().and_then(|v| self.infer_node(v));
+            Ast::Literal { value, span } => {
+                Some(Ast::Literal { value: value.clone(), span: *span })
+            }
+            Ast::StructCons { name, fields, span, .. } => {
+                let tf: Vec<(String, Ast)> = fields
+                    .iter()
+                    .filter_map(|(n, v)| self.infer_node(v).map(|ast| (n.clone(), ast)))
+                    .collect();
+                let ft: Vec<(String, Type)> = tf
+                    .iter()
+                    .map(|(n, v)| (n.clone(), self.get_type(v).unwrap_or_else(fresh_var)))
+                    .collect();
+                Some(Ast::StructCons {
+                    name: name.clone(),
+                    fields: tf,
+                    llvm_type: Some(Type::Record(ft)),
+                    span: *span,
+                })
+            }
+            Ast::SumCons { name, value, span, .. } => {
+                let typed_val = value.as_ref().and_then(|v| self.infer_node(v));
                 let inner_type = typed_val.as_ref().and_then(|v| self.get_type(v));
-                let sum_type = Тип::Сумма(vec![(имя.clone(), inner_type.clone())]);
-                Some(Ast::КонструкторСуммы { имя: имя.clone(), значение: typed_val.map(Box::new), тип: Some(sum_type), span: *span })
+                let sum_type = Type::Sum(vec![(name.clone(), inner_type.clone())]);
+                Some(Ast::SumCons {
+                    name: name.clone(),
+                    value: typed_val.map(Box::new),
+                    llvm_type: Some(sum_type),
+                    span: *span,
+                })
             }
             _ => Some(node.clone()),
         }
     }
-    
-    fn get_type(&self, node: &Ast) -> Option<Тип> {
+
+    fn get_type(&self, node: &Ast) -> Option<Type> {
         match node {
-            Ast::ДвоичноеВыражение { тип, .. } | Ast::УнарноеВыражение { тип, .. } | Ast::Вызов { тип, .. } | Ast::Если { тип, .. } | Ast::Переменная { тип, .. } | Ast::КонструкторСтруктуры { тип, .. } | Ast::КонструкторСуммы { тип, .. } | Ast::ДоступКПолю { тип, .. } | Ast::ОбновлениеСтруктуры { тип, .. } | Ast::Сопоставление { тип, .. } => тип.clone(),
-            Ast::Литерал { значение, .. } => Some(self.literal_type(значение)),
+            Ast::BinExpr { llvm_type, .. }
+            | Ast::UnaryExpr { llvm_type, .. }
+            | Ast::Call { llvm_type, .. }
+            | Ast::If { llvm_type, .. }
+            | Ast::Variable { llvm_type, .. }
+            | Ast::StructCons { llvm_type, .. }
+            | Ast::SumCons { llvm_type, .. }
+            | Ast::FieldAccess { llvm_type, .. }
+            | Ast::StructUpdate { llvm_type, .. }
+            | Ast::Match { llvm_type, .. } => llvm_type.clone(),
+            Ast::Literal { value, .. } => Some(self.literal_type(value)),
             _ => None,
         }
     }
 
-    fn type_mismatch(&self, expected: &Тип, found: &Тип) -> Diagnostic { Diagnostic { kind: DiagnosticKind::Ошибка, message: format!("Несоответствие типов: ожидался '{}', получен '{}'", self.type_to_string(expected), self.type_to_string(found)), span: Span { line: 0, column: 0, offset: 0 }, hint: None } }
+    fn type_mismatch(&self, expected: &Type, found: &Type) -> Diagnostic {
+        Diagnostic {
+            kind: DiagnosticKind::Error,
+            message: format!(
+                "Type mismatch: expected '{}', found '{}'",
+                self.type_to_string(expected),
+                self.type_to_string(found)
+            ),
+            span: Span { line: 0, column: 0, offset: 0 },
+            hint: None,
+        }
+    }
 
-    fn type_to_string(&self, typ: &Тип) -> String {
+    fn type_to_string(&self, typ: &Type) -> String {
         match typ {
-            Тип::Примитивный(ПримитивныйТип::Целое) => "Целое".into(),
-            Тип::Примитивный(ПримитивныйТип::Десятичное) => "Десятичное".into(),
-            Тип::Примитивный(ПримитивныйТип::Булево) => "Булево".into(),
-            Тип::Примитивный(ПримитивныйТип::Строка) => "Строка".into(),
-            Тип::Переменная(v) => v.clone(),
-            Тип::Функция { аргументы, результат } => format!("({}) -> {}", аргументы.iter().map(|a| self.type_to_string(a)).collect::<Vec<_>>().join(", "), self.type_to_string(результат)),
-            Тип::Запись(поля) => format!("{{ {} }}", поля.iter().map(|(n, t)| format!("{}: {}", n, self.type_to_string(t))).collect::<Vec<_>>().join(", ")),
-            Тип::Сумма(варианты) => format!("enum {{ {} }}", варианты.iter().map(|(n, t)| match t { Some(tt) => format!("{}({})", n, self.type_to_string(tt)), None => n.clone() }).collect::<Vec<_>>().join(" | ")),
-            Тип::Пустой => "Пустой".into(),
-            Тип::Кортеж(типы) => format!("({})", типы.iter().map(|t| self.type_to_string(t)).collect::<Vec<_>>().join(", ")),
+            Type::Primitive(PrimitiveType::Int) => "Int".into(),
+            Type::Primitive(PrimitiveType::Float) => "Float".into(),
+            Type::Primitive(PrimitiveType::Bool) => "Bool".into(),
+            Type::Primitive(PrimitiveType::String) => "String".into(),
+            Type::Variable(v) => v.clone(),
+            Type::Fn { arguments, result } => format!(
+                "({}) -> {}",
+                arguments
+                    .iter()
+                    .map(|a| self.type_to_string(a))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                self.type_to_string(result)
+            ),
+            Type::Record(fields) => format!(
+                "{{ {} }}",
+                fields
+                    .iter()
+                    .map(|(n, t)| format!("{}: {}", n, self.type_to_string(t)))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            Type::Sum(variants) => format!(
+                "enum {{ {} }}",
+                variants
+                    .iter()
+                    .map(|(n, t)| match t {
+                        Some(tt) => format!("{}({})", n, self.type_to_string(tt)),
+                        None => n.clone(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            ),
+            Type::Void => "Void".into(),
+            Type::Tuple(types) => format!(
+                "({})",
+                types
+                    .iter()
+                    .map(|t| self.type_to_string(t))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
             _ => format!("{:?}", typ),
         }
     }
 }
 
-pub fn substitute_type_vars(typ: &Тип, map: &HashMap<String, Тип>) -> Тип {
+pub fn substitute_type_vars(typ: &Type, map: &HashMap<String, Type>) -> Type {
     match typ {
-        Тип::Переменная(name) => map.get(name).cloned().unwrap_or(typ.clone()),
-        Тип::Функция { аргументы, результат } => Тип::Функция { аргументы: аргументы.iter().map(|a| substitute_type_vars(a, map)).collect(), результат: Box::new(substitute_type_vars(результат, map)) },
-        Тип::Запись(поля) => Тип::Запись(поля.iter().map(|(n, t)| (n.clone(), substitute_type_vars(t, map))).collect()),
+        Type::Variable(name) => map.get(name).cloned().unwrap_or(typ.clone()),
+        Type::Fn { arguments, result } => Type::Fn {
+            arguments: arguments
+                .iter()
+                .map(|a| substitute_type_vars(a, map))
+                .collect(),
+            result: Box::new(substitute_type_vars(result, map)),
+        },
+        Type::Record(fields) => Type::Record(
+            fields
+                .iter()
+                .map(|(n, t)| (n.clone(), substitute_type_vars(t, map)))
+                .collect(),
+        ),
         _ => typ.clone(),
     }
 }
 
 pub fn apply_substitution_to_ast(ast: &mut Ast, sub: &Substitution) {
     match ast {
-        Ast::Модуль { объявления, .. } => { for d in объявления { apply_substitution_to_ast(d, sub); } }
-        Ast::ОбъявлениеФункции { параметры, возвращаемый_тип, тело, .. } => { for p in параметры { p.тип = sub.apply(&p.тип); } if let Some(ref mut r) = возвращаемый_тип { *r = sub.apply(r); } apply_substitution_to_ast(тело, sub); }
-        Ast::Блок { выражения, .. } => { for e in выражения { apply_substitution_to_ast(e, sub); } }
-        Ast::Пусть { тип_аннотация, значение, .. } | Ast::Присваивание { тип_аннотация, значение, .. } => { if let Some(ref mut t) = тип_аннотация { *t = sub.apply(t); } apply_substitution_to_ast(значение, sub); }
-        Ast::ПрисваиваниеСОперацией { значение, .. } => { apply_substitution_to_ast(значение, sub); }
-        Ast::ПрисваиваниеОбразца { значение, .. } => { apply_substitution_to_ast(значение, sub); }
-        Ast::ОбновлениеСтруктуры { объект, поля, тип, .. } => { apply_substitution_to_ast(объект, sub); for (_, v) in поля { apply_substitution_to_ast(v, sub); } if let Some(ref mut t) = тип { *t = sub.apply(t); } }
-        Ast::Сопоставление { значение, ветки, тип, .. } => { apply_substitution_to_ast(значение, sub); for в in ветки { if let Some(ref mut g) = в.условие { apply_substitution_to_ast(g, sub); } apply_substitution_to_ast(&mut в.тело, sub); } if let Some(ref mut t) = тип { *t = sub.apply(t); } }
-        Ast::ДвоичноеВыражение { левое, правое, тип, .. } => { if let Some(ref mut t) = тип { *t = sub.apply(t); } apply_substitution_to_ast(левое, sub); apply_substitution_to_ast(правое, sub); }
-        Ast::Вызов { функция, аргументы, тип, .. } => { if let Some(ref mut t) = тип { *t = sub.apply(t); } apply_substitution_to_ast(функция, sub); for a in аргументы { apply_substitution_to_ast(a, sub); } }
-        Ast::Если { условие, то, иначе, тип, .. } => { if let Some(ref mut t) = тип { *t = sub.apply(t); } apply_substitution_to_ast(условие, sub); apply_substitution_to_ast(то, sub); if let Some(ref mut e) = иначе { apply_substitution_to_ast(e, sub); } }
-        Ast::Пока { условие, тело, .. } => { apply_substitution_to_ast(условие, sub); apply_substitution_to_ast(тело, sub); }
-        Ast::ЦиклПока { условие, тело, .. } => { apply_substitution_to_ast(условие, sub); apply_substitution_to_ast(тело, sub); }
-        Ast::Переменная { тип, .. } => { if let Some(ref mut t) = тип { *t = sub.apply(t); } }
-        Ast::КонструкторСтруктуры { поля, тип, .. } => { if let Some(ref mut t) = тип { *t = sub.apply(t); } for (_, v) in поля { apply_substitution_to_ast(v, sub); } }
-        Ast::КонструкторСуммы { тип, значение, .. } => { if let Some(ref mut t) = тип { *t = sub.apply(t); } if let Some(ref mut v) = значение { apply_substitution_to_ast(v, sub); } }
-        Ast::ДоступКПолю { объект, тип, .. } => { if let Some(ref mut t) = тип { *t = sub.apply(t); } apply_substitution_to_ast(объект, sub); }
+        Ast::Module { declarations, .. } => {
+            for d in declarations {
+                apply_substitution_to_ast(d, sub);
+            }
+        }
+        Ast::FnDecl { params, return_type, body, .. } => {
+            for p in params {
+                p.llvm_type = sub.apply(&p.llvm_type);
+            }
+            if let Some(ref mut r) = return_type {
+                *r = sub.apply(r);
+            }
+            apply_substitution_to_ast(body, sub);
+        }
+        Ast::Block { expressions, .. } => {
+            for e in expressions {
+                apply_substitution_to_ast(e, sub);
+            }
+        }
+        Ast::Let { type_annotation, value, .. }
+        | Ast::Assign { type_annotation, value, .. } => {
+            if let Some(ref mut t) = type_annotation {
+                *t = sub.apply(t);
+            }
+            apply_substitution_to_ast(value, sub);
+        }
+        Ast::OpAssign { value, .. } => {
+            apply_substitution_to_ast(value, sub);
+        }
+        Ast::PatternAssign { value, .. } => {
+            apply_substitution_to_ast(value, sub);
+        }
+        Ast::StructUpdate { object, fields, llvm_type, .. } => {
+            apply_substitution_to_ast(object, sub);
+            for (_, v) in fields {
+                apply_substitution_to_ast(v, sub);
+            }
+            if let Some(ref mut t) = llvm_type {
+                *t = sub.apply(t);
+            }
+        }
+        Ast::Match { value, arms, llvm_type, .. } => {
+            apply_substitution_to_ast(value, sub);
+            for arm in arms {
+                if let Some(ref mut g) = arm.condition {
+                    apply_substitution_to_ast(g, sub);
+                }
+                apply_substitution_to_ast(&mut arm.body, sub);
+            }
+            if let Some(ref mut t) = llvm_type {
+                *t = sub.apply(t);
+            }
+        }
+        Ast::BinExpr { left, right, llvm_type, .. } => {
+            if let Some(ref mut t) = llvm_type {
+                *t = sub.apply(t);
+            }
+            apply_substitution_to_ast(left, sub);
+            apply_substitution_to_ast(right, sub);
+        }
+        Ast::Call { function, arguments, llvm_type, .. } => {
+            if let Some(ref mut t) = llvm_type {
+                *t = sub.apply(t);
+            }
+            apply_substitution_to_ast(function, sub);
+            for a in arguments {
+                apply_substitution_to_ast(a, sub);
+            }
+        }
+        Ast::If { condition, then, else_arm, llvm_type, .. } => {
+            if let Some(ref mut t) = llvm_type {
+                *t = sub.apply(t);
+            }
+            apply_substitution_to_ast(condition, sub);
+            apply_substitution_to_ast(then, sub);
+            if let Some(ref mut e) = else_arm {
+                apply_substitution_to_ast(e, sub);
+            }
+        }
+        Ast::While { condition, body, .. } => {
+            apply_substitution_to_ast(condition, sub);
+            apply_substitution_to_ast(body, sub);
+        }
+        Ast::LoopWhile { condition, body, .. } => {
+            apply_substitution_to_ast(condition, sub);
+            apply_substitution_to_ast(body, sub);
+        }
+        Ast::Variable { llvm_type, .. } => {
+            if let Some(ref mut t) = llvm_type {
+                *t = sub.apply(t);
+            }
+        }
+        Ast::StructCons { fields, llvm_type, .. } => {
+            if let Some(ref mut t) = llvm_type {
+                *t = sub.apply(t);
+            }
+            for (_, v) in fields {
+                apply_substitution_to_ast(v, sub);
+            }
+        }
+        Ast::SumCons { llvm_type, value, .. } => {
+            if let Some(ref mut t) = llvm_type {
+                *t = sub.apply(t);
+            }
+            if let Some(ref mut v) = value {
+                apply_substitution_to_ast(v, sub);
+            }
+        }
+        Ast::FieldAccess { object, llvm_type, .. } => {
+            if let Some(ref mut t) = llvm_type {
+                *t = sub.apply(t);
+            }
+            apply_substitution_to_ast(object, sub);
+        }
         _ => {}
     }
 }

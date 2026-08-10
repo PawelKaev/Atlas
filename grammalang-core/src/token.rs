@@ -3,134 +3,135 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// Позиция в исходном файле
+/// Position in source file
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Span {
-    pub line: usize,   // строка, начиная с 1
-    pub column: usize, // столбец, начиная с 1
-    pub offset: usize, // смещение в байтах от начала файла
+    pub line: usize,   // line, starting from 1
+    pub column: usize, // column, starting from 1
+    pub offset: usize, // byte offset from start of file
 }
 
 impl fmt::Display for Span {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "строка {}, столбец {}", self.line, self.column)
+        write!(f, "line {}, column {}", self.line, self.column)
     }
 }
 
-/// Вид токена
+/// Token kind
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum TokenKind {
-    // Ключевые слова
-    Функция,
-    Вернуть,
-    Если,
-    Иначе,
-    Сопоставить,
-    Структура,
-    Тип,
-    Изм,
-    Внутри,
-    Вместе,
-    Макрос,
-    Открыто,
-    Импорт,
-    Модуль,
-    Ручной,
-    Цитировать,
-    Вставить,
-    Для,
-    Каждого,
-    Из,
-    Пока,
-    Где,
-    Истина,
-    Ложь,
-    Ничего,
-    Значение,
-    Провал,
-    Успех,
+    // Keywords
+    Fn,
+    Return,
+    If,
+    Else,
+    Match,
+    Struct,
+    Type,
+    Mut,
+    Effect,
+    Together,
+    Macro,
+    Public,
+    Import,
+    Module,
+    Unsafe,
+    Quote,
+    Splice,
+    For,
+    Each,
+    From,
+    While,
+    Where,
+    True,
+    False,
+    Nil,
+    Value,
+    Failure,
+    Success,
     
-    // Новые ключевые слова
-    Пусть,          // let
-    Цикл,           // loop
-    Прервать,       // break
-    Продолжить,     // continue
-    Как,            // as (приведение типов)
-    С,              // with (обновление структуры)
+    // New keywords
+    Let,
+    Loop,
+    Break,
+    Continue,
+    As,       // as (type casting)
+    With,     // with (struct update)
     
-    // Идентификаторы и литералы
-    Идентификатор(String),
-    Целое(i64),
-    Десятичное(f64),
-    Строка(String),
-    Символ(char),
+    // Identifiers and literals
+    Identifier(String),
+    Int(i64),
+    Float(f64),
+    String(String),
+    Char(char),
 
-    // Операторы
-    Плюс,           // +
-    Минус,          // -
-    Звёздочка,      // *
-    Слэш,           // /
-    Процент,        // %
-    Равно,          // =
-    ДваРавно,       // ==
-    НеРавно,        // !=
-    Меньше,         // <
-    Больше,         // >
-    МеньшеРавно,    // <=
-    БольшеРавно,    // >=
-    Стрелка,        // ->
-    Конвейер,       // |>
-    Композиция,     // >>
-    Амперсанд,      // &
-    Собака,         // @
-    ВертикальнаяЧерта, // |
-    Вопрос,         // ?
-    Подчёркивание,  // _
-    Точка,          // .
-    Двоеточие,      // :
-    Запятая,        // ,
-    ТочкаСЗапятой,  // ;
-    Многоточие,     // ..
-    МногоРавно,     // ..=
+    // Operators
+    Plus,        // +
+    Minus,       // -
+    Star,        // *
+    Slash,       // /
+    Percent,     // %
+    Eq,          // =
+    EqEq,        // ==
+    NotEq,       // !=
+    Lt,          // <
+    Gt,          // >
+    Le,          // <=
+    Ge,          // >=
+    Arrow,       // ->
+    Pipeline,    // |>
+    Shr,         // >>
+    Ampersand,   // &
+    At,          // @
+    Pipe,        // |
+    Question,    // ?
+    Underscore,  // _
+    Dot,         // .
+    Colon,       // :
+    ColonColonColon,  // :::
+    Comma,       // ,
+    Semicolon,   // ;
+    DotDot,      // ..
+    DotDotEq,    // ..=
+    Ellipsis,    // ...
     
-    // Составные операторы
-    ПлюсРавно,      // +=
-    МинусРавно,     // -=
-    ЗвёздочкаРавно, // *=
-    СлэшРавно,      // /=
-    ПроцентРавно,   // %=
-    АмперсандРавно, // &=
-    ЧертаРавно,     // |=
-    ДваМеньше,      // <<
-    ДваБольше,      // >>
-    ДваМеньшеРавно, // <<=
-    ДваБольшеРавно, // >>=
-    Крышка,         // ^
-    КрышкаРавно,    // ^=
-    Восклицание,    // !
+    // Compound operators
+    PlusEq,      // +=
+    MinusEq,     // -=
+    StarEq,      // *=
+    SlashEq,     // /=
+    PercentEq,   // %=
+    AmpersandEq, // &=
+    PipeEq,      // |=
+    Shl,         // <<
+    ShlEq,       // <<=
+    ShrEq,       // >>=
+    Caret,       // ^
+    CaretEq,     // ^=
+    Bang,        // !
 
-    // Скобки
-    КруглаяОткрыто,
-    КруглаяЗакрыто,
-    ФигурнаяОткрыто,
-    ФигурнаяЗакрыто,
-    КвадратнаяОткрыто,
-    КвадратнаяЗакрыто,
+    // Brackets
+    LParen,
+    RParen,
+    LBrace,
+    RBrace,
+    LBracket,
+    RBracket,
 
-    // Специальные
-    Отступ,            // увеличение отступа
-    ОтменаОтступа,     // уменьшение отступа
-    КонецФайла,
-    Комментарий(String),
-    Документация(String),
-    Ошибка(String),
+    // Special
+    Indent,          // increase indentation
+    Dedent,          // decrease indentation
+    Eof,
+    Comment(String),
+    Documentation(String),
+    Error(String),
 }
 
-/// Токен — атомарная единица языка
+/// Token — atomic unit of the language
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Token {
     pub kind: TokenKind,
-    pub lexeme: String,  // исходный текст токена
+    pub lexeme: String,  // original token text
     pub span: Span,
 }
 

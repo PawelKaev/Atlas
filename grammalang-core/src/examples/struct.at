@@ -1,0 +1,8 @@
+структура Точка:
+    x: Int
+    y: Int
+
+function main():
+    пусть p = Точка { x: 10, y: 20 }
+    print(p.x)
+    print(p.y)

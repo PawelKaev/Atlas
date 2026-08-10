@@ -1,22 +1,22 @@
-// will_markers.rs — модуль для анализа воли (Парменид vs Гераклит)
+// will_markers.rs — will analysis module (Parmenides vs Heraclitus)
 
 const PARMENIDES_MARKERS: &[&str] = &[
-    "есть", "суть", "является", "тождественно", "равно",
-    "всегда", "никогда", "вечно", "неизменно",
-    "должен", "обязан", "необходимо", "определённо", "именно",
-    "истинно", "безусловно", "единственно", "только",
-    "сущее", "бытие", "единое", "неподвижное",
-    "абсолютно", "непременно", "всецело", "целиком", "конечно",
+    "is", "are", "being", "identical", "equal",
+    "always", "never", "eternal", "unchanging",
+    "must", "obliged", "necessary", "definitely", "exactly",
+    "truly", "unconditionally", "solely", "only",
+    "existent", "being", "one", "immovable",
+    "absolutely", "certainly", "entirely", "completely", "finally",
 ];
 
 const HERACLITUS_MARKERS: &[&str] = &[
-    "становится", "изменяется", "превращается", "переходит",
-    "может", "способен", "возможно", "иногда",
-    "однако", "но", "зато", "впрочем",
-    "противоречие", "борьба", "война", "поток",
-    "текучесть", "изменчивость", "множество",
-    "непостоянно", "относительно", "отчасти", "вероятно",
-    "течение", "становление", "меняется",
+    "becomes", "changes", "transforms", "transitions",
+    "can", "capable", "possible", "sometimes",
+    "however", "but", "then", "moreover",
+    "contradiction", "struggle", "war", "flow",
+    "fluidity", "variability", "multitude",
+    "inconstantly", "relatively", "partially", "probably",
+    "stream", "becoming", "varies",
 ];
 
 pub fn analyze_sentence(sentence: &str) -> (usize, usize, usize) {
@@ -44,7 +44,7 @@ pub fn analyze_sentence(sentence: &str) -> (usize, usize, usize) {
     let mut negated_heraclitus: usize = 0;
     for i in 0..words.len() {
         let word = words[i];
-        if word == "не" || word == "ни" {
+        if word == "not" || word == "no" {
             if i + 1 < words.len() {
                 let next = words[i + 1];
                 if PARMENIDES_MARKERS.contains(&next) {

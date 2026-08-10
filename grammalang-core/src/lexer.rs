@@ -3,7 +3,7 @@
 use crate::error::{Diagnostic, DiagnosticKind};
 use crate::token::{Span, Token, TokenKind};
 
-/// Лексер — превращает исходный текст в поток токенов
+/// Lexer — transforms source text into a stream of tokens
 pub struct Lexer {
     source: Vec<char>,
     pos: usize,
@@ -11,9 +11,9 @@ pub struct Lexer {
     column: usize,
     tokens: Vec<Token>,
     errors: Vec<Diagnostic>,
-    /// Стек уровней отступа
+    /// Stack of indentation levels
     indent_stack: Vec<usize>,
-    /// Начало текущей строки (для расчёта отступа)
+    /// Start of current line (for indentation calculation)
     line_start: bool,
 }
 
@@ -31,18 +31,17 @@ impl Lexer {
         }
     }
 
-    /// Главный метод — разобрать весь исходный текст в токены
+    /// Main method — tokenize the entire source text
     pub fn tokenize(&mut self) -> (Vec<Token>, Vec<Diagnostic>) {
         while !self.is_at_end() {
             let c = self.peek();
 
             match c {
-                // Пробелы и отступы
+                // Whitespace and indentation
                 ' ' if self.line_start => self.handle_indent(),
                 ' ' | '\t' | '\r' => {
-                    // табуляция в отступах — ошибка
                     if c == '\t' && self.line_start {
-                        self.error("Табуляция запрещена. Используйте пробелы для отступов.");
+                        self.error("Tabs are forbidden. Use spaces for indentation.");
                     }
                     self.advance();
                 }
@@ -53,162 +52,162 @@ impl Lexer {
                     self.line_start = true;
                 }
 
-                // Комментарии
+                // Comments
                 '/' if self.peek_next() == '/' => self.skip_line_comment(),
                 '/' if self.peek_next() == '*' => self.skip_block_comment(),
 
-                // Строки и символы
+                // Strings and chars
                 '"' => self.read_string(),
                 '\'' => self.read_char(),
 
-                // Числа
+                // Numbers
                 '0'..='9' => self.read_number(),
                 '-' if self.peek_next().is_ascii_digit() => self.read_number(),
 
-                // Идентификаторы и ключевые слова
-                'а'..='я' | 'ё' | 'А'..='Я' | 'Ё' | 'a'..='z' | 'A'..='Z' | '_' => {
+                // Identifiers and keywords
+                'a'..='z' | 'A'..='Z' | '_' => {
                     self.read_identifier()
                 }
 
-                // Операторы и разделители
+                // Operators and delimiters
                 '+' => {
                     if self.peek_next() == '=' {
-                        self.double_token(TokenKind::ПлюсРавно)
+                        self.double_token(TokenKind::PlusEq)
                     } else {
-                        self.single_token(TokenKind::Плюс)
+                        self.single_token(TokenKind::Plus)
                     }
                 }
                 '*' => {
                     if self.peek_next() == '=' {
-                        self.double_token(TokenKind::ЗвёздочкаРавно)
+                        self.double_token(TokenKind::StarEq)
                     } else {
-                        self.single_token(TokenKind::Звёздочка)
+                        self.single_token(TokenKind::Star)
                     }
                 }
                 '%' => {
                     if self.peek_next() == '=' {
-                        self.double_token(TokenKind::ПроцентРавно)
+                        self.double_token(TokenKind::PercentEq)
                     } else {
-                        self.single_token(TokenKind::Процент)
+                        self.single_token(TokenKind::Percent)
                     }
                 }
                 '^' => {
                     if self.peek_next() == '=' {
-                        self.double_token(TokenKind::КрышкаРавно)
+                        self.double_token(TokenKind::CaretEq)
                     } else {
-                        self.single_token(TokenKind::Крышка)
+                        self.single_token(TokenKind::Caret)
                     }
                 }
                 '!' => {
                     if self.peek_next() == '=' {
-                        self.double_token(TokenKind::НеРавно)
+                        self.double_token(TokenKind::NotEq)
                     } else {
-                        self.single_token(TokenKind::Восклицание)
+                        self.single_token(TokenKind::Bang)
                     }
                 }
-                '(' => self.single_token(TokenKind::КруглаяОткрыто),
-                ')' => self.single_token(TokenKind::КруглаяЗакрыто),
-                '{' => self.single_token(TokenKind::ФигурнаяОткрыто),
-                '}' => self.single_token(TokenKind::ФигурнаяЗакрыто),
-                '[' => self.single_token(TokenKind::КвадратнаяОткрыто),
-                ']' => self.single_token(TokenKind::КвадратнаяЗакрыто),
-                ',' => self.single_token(TokenKind::Запятая),
-                ':' => self.single_token(TokenKind::Двоеточие),
-                ';' => self.single_token(TokenKind::ТочкаСЗапятой),
-                '?' => self.single_token(TokenKind::Вопрос),
-                '@' => self.single_token(TokenKind::Собака),
+                '(' => self.single_token(TokenKind::LParen),
+                ')' => self.single_token(TokenKind::RParen),
+                '{' => self.single_token(TokenKind::LBrace),
+                '}' => self.single_token(TokenKind::RBrace),
+                '[' => self.single_token(TokenKind::LBracket),
+                ']' => self.single_token(TokenKind::RBracket),
+                ',' => self.single_token(TokenKind::Comma),
+                ':' => self.single_token(TokenKind::Colon),
+                ';' => self.single_token(TokenKind::Semicolon),
+                '?' => self.single_token(TokenKind::Question),
+                '@' => self.single_token(TokenKind::At),
 
                 '=' => {
                     if self.peek_next() == '=' {
-                        self.double_token(TokenKind::ДваРавно)
+                        self.double_token(TokenKind::EqEq)
                     } else {
-                        self.single_token(TokenKind::Равно)
+                        self.single_token(TokenKind::Eq)
                     }
                 }
                 '<' => {
                     if self.peek_next() == '=' {
-                        self.double_token(TokenKind::МеньшеРавно)
+                        self.double_token(TokenKind::Le)
                     } else if self.peek_next() == '<' {
                         if self.peek_n(2) == '=' {
-                            self.triple_token(TokenKind::ДваМеньшеРавно)
+                            self.triple_token(TokenKind::ShlEq)
                         } else {
-                            self.double_token(TokenKind::ДваМеньше)
+                            self.double_token(TokenKind::Shl)
                         }
                     } else {
-                        self.single_token(TokenKind::Меньше)
+                        self.single_token(TokenKind::Lt)
                     }
                 }
                 '>' => {
                     if self.peek_next() == '=' {
-                        self.double_token(TokenKind::БольшеРавно)
+                        self.double_token(TokenKind::Ge)
                     } else if self.peek_next() == '>' {
                         if self.peek_n(2) == '=' {
-                            self.triple_token(TokenKind::ДваБольшеРавно)
+                            self.triple_token(TokenKind::ShrEq)
                         } else {
-                            self.double_token(TokenKind::Композиция)
+                            self.double_token(TokenKind::Shr)
                         }
                     } else {
-                        self.single_token(TokenKind::Больше)
+                        self.single_token(TokenKind::Gt)
                     }
                 }
                 '-' => {
                     if self.peek_next() == '>' {
-                        self.double_token(TokenKind::Стрелка)
+                        self.double_token(TokenKind::Arrow)
                     } else if self.peek_next() == '=' {
-                        self.double_token(TokenKind::МинусРавно)
+                        self.double_token(TokenKind::MinusEq)
                     } else if self.peek_next().is_ascii_digit() {
                         self.read_number()
                     } else {
-                        self.single_token(TokenKind::Минус)
+                        self.single_token(TokenKind::Minus)
                     }
                 }
                 '|' => {
                     if self.peek_next() == '>' {
-                        self.double_token(TokenKind::Конвейер)
+                        self.double_token(TokenKind::Pipeline)
                     } else if self.peek_next() == '=' {
-                        self.double_token(TokenKind::ЧертаРавно)
+                        self.double_token(TokenKind::PipeEq)
                     } else {
-                        self.single_token(TokenKind::ВертикальнаяЧерта)
+                        self.single_token(TokenKind::Pipe)
                     }
                 }
                 '&' => {
                     if self.peek_next() == '=' {
-                        self.double_token(TokenKind::АмперсандРавно)
+                        self.double_token(TokenKind::AmpersandEq)
                     } else {
-                        self.single_token(TokenKind::Амперсанд)
+                        self.single_token(TokenKind::Ampersand)
                     }
                 }
                 '.' => {
                     if self.peek_next() == '.' && self.peek_n(2) == '=' {
-                        self.triple_token(TokenKind::МногоРавно)
+                        self.triple_token(TokenKind::DotDotEq)
                     } else if self.peek_next() == '.' && self.peek_n(2) == '.' {
-                        self.triple_token(TokenKind::Многоточие)
+                        self.triple_token(TokenKind::Ellipsis)
                     } else if self.peek_next() == '.' {
-                        self.double_token(TokenKind::Многоточие)
+                        self.double_token(TokenKind::DotDot)
                     } else {
-                        self.single_token(TokenKind::Точка)
+                        self.single_token(TokenKind::Dot)
                     }
                 }
-                '_' => self.single_token(TokenKind::Подчёркивание),
+                '_' => self.single_token(TokenKind::Underscore),
 
                 _ => {
-                    self.error(&format!("Неожиданный символ: '{}'", c));
+                    self.error(&format!("Unexpected character: '{}'", c));
                     self.advance();
                 }
             }
         }
 
-        // В конце файла — закрыть все оставшиеся отступы
+        // At end of file — close all remaining indentation levels
         while self.indent_stack.len() > 1 {
             self.indent_stack.pop();
-            self.push_token(TokenKind::ОтменаОтступа, "");
+            self.push_token(TokenKind::Dedent, "");
         }
 
-        self.push_token(TokenKind::КонецФайла, "");
+        self.push_token(TokenKind::Eof, "");
         (std::mem::take(&mut self.tokens), std::mem::take(&mut self.errors))
     }
 
-    // ============ Обработка отступов ============
+    // ============ Indentation handling ============
 
     fn handle_indent(&mut self) {
         let mut spaces = 0;
@@ -219,7 +218,7 @@ impl Lexer {
             spaces += 1;
         }
 
-        // Пустая строка — игнорируем
+        // Empty line — ignore
         if self.peek() == '\n' || self.peek() == '\r' {
             return;
         }
@@ -228,21 +227,21 @@ impl Lexer {
 
         if spaces > current {
             self.indent_stack.push(spaces);
-            self.push_token_at(TokenKind::Отступ, "", start);
+            self.push_token_at(TokenKind::Indent, "", start);
         } else if spaces < current {
             while *self.indent_stack.last().unwrap() > spaces {
                 self.indent_stack.pop();
-                self.push_token_at(TokenKind::ОтменаОтступа, "", start);
+                self.push_token_at(TokenKind::Dedent, "", start);
             }
             if *self.indent_stack.last().unwrap() != spaces {
-                self.error_at("Неверный отступ. Ожидался уровень, кратный 4 пробелам.", start);
+                self.error_at("Invalid indentation. Expected level multiple of 4 spaces.", start);
             }
         }
 
         self.line_start = false;
     }
 
-    // ============ Чтение токенов ============
+    // ============ Token readers ============
 
     fn read_identifier(&mut self) {
         let start = self.current_span();
@@ -254,41 +253,41 @@ impl Lexer {
         }
 
         let kind = match name.as_str() {
-            "функция" => TokenKind::Функция,
-            "вернуть" => TokenKind::Вернуть,
-            "если" => TokenKind::Если,
-            "иначе" => TokenKind::Иначе,
-            "сопоставить" => TokenKind::Сопоставить,
-            "структура" => TokenKind::Структура,
-            "тип" => TokenKind::Тип,
-            "изм" => TokenKind::Изм,
-            "внутри" => TokenKind::Внутри,
-            "вместе" => TokenKind::Вместе,
-            "макрос" => TokenKind::Макрос,
-            "открыто" => TokenKind::Открыто,
-            "импорт" => TokenKind::Импорт,
-            "модуль" => TokenKind::Модуль,
-            "ручной" => TokenKind::Ручной,
-            "цитировать" => TokenKind::Цитировать,
-            "вставить" => TokenKind::Вставить,
-            "для" => TokenKind::Для,
-            "каждого" => TokenKind::Каждого,
-            "из" => TokenKind::Из,
-            "пока" => TokenKind::Пока,
-            "где" => TokenKind::Где,
-            "Истина" => TokenKind::Истина,
-            "Ложь" => TokenKind::Ложь,
-            "Ничего" => TokenKind::Ничего,
-            "Значение" => TokenKind::Значение,
-            "Провал" => TokenKind::Провал,
-            "Успех" => TokenKind::Успех,
-            "пусть" => TokenKind::Пусть,
-            "цикл" => TokenKind::Цикл,
-            "прервать" => TokenKind::Прервать,
-            "продолжить" => TokenKind::Продолжить,
-            "как" => TokenKind::Как,
-            "с" => TokenKind::С,
-            _ => TokenKind::Идентификатор(name.clone()),
+            "fn" => TokenKind::Fn,
+            "return" => TokenKind::Return,
+            "if" => TokenKind::If,
+            "else" => TokenKind::Else,
+            "match" => TokenKind::Match,
+            "struct" => TokenKind::Struct,
+            "type" => TokenKind::Type,
+            "mut" => TokenKind::Mut,
+            "effect" => TokenKind::Effect,
+            "together" => TokenKind::Together,
+            "macro" => TokenKind::Macro,
+            "public" => TokenKind::Public,
+            "import" => TokenKind::Import,
+            "module" => TokenKind::Module,
+            "unsafe" => TokenKind::Unsafe,
+            "quote" => TokenKind::Quote,
+            "splice" => TokenKind::Splice,
+            "for" => TokenKind::For,
+            "each" => TokenKind::Each,
+            "from" => TokenKind::From,
+            "while" => TokenKind::While,
+            "where" => TokenKind::Where,
+            "True" => TokenKind::True,
+            "False" => TokenKind::False,
+            "Nil" => TokenKind::Nil,
+            "Value" => TokenKind::Value,
+            "Failure" => TokenKind::Failure,
+            "Success" => TokenKind::Success,
+            "let" => TokenKind::Let,
+            "loop" => TokenKind::Loop,
+            "break" => TokenKind::Break,
+            "continue" => TokenKind::Continue,
+            "as" => TokenKind::As,
+            "with" => TokenKind::With,
+            _ => TokenKind::Identifier(name.clone()),
         };
 
         self.push_token_at(kind, &name, start);
@@ -320,9 +319,9 @@ impl Lexer {
         }
 
         let kind = if is_float {
-            TokenKind::Десятичное(num.parse().unwrap_or(0.0))
+            TokenKind::Float(num.parse().unwrap_or(0.0))
         } else {
-            TokenKind::Целое(num.parse().unwrap_or(0))
+            TokenKind::Int(num.parse().unwrap_or(0))
         };
 
         self.push_token_at(kind, &num, start);
@@ -330,7 +329,7 @@ impl Lexer {
 
     fn read_string(&mut self) {
         let start = self.current_span();
-        self.advance(); // пропускаем открывающую кавычку
+        self.advance(); // skip opening quote
         let mut s = String::new();
 
         while !self.is_at_end() && self.peek() != '"' {
@@ -354,21 +353,21 @@ impl Lexer {
         }
 
         if self.peek() == '"' {
-            self.advance(); // закрывающая кавычка
+            self.advance(); // closing quote
         } else {
-            self.error_at("Незакрытая строка", start);
+            self.error_at("Unclosed string", start);
         }
 
-        self.push_token_at(TokenKind::Строка(s.clone()), &format!("\"{}\"", s), start);
+        self.push_token_at(TokenKind::String(s.clone()), &format!("\"{}\"", s), start);
     }
 
     fn read_char(&mut self) {
         let start = self.current_span();
-        self.advance(); // пропускаем открывающую кавычку '
+        self.advance(); // skip opening quote '
         let mut ch = '\0';
 
         if self.is_at_end() {
-            self.error_at("Незакрытый символьный литерал", start);
+            self.error_at("Unclosed char literal", start);
             return;
         }
 
@@ -382,7 +381,7 @@ impl Lexer {
                 '"' => ch = '"',
                 '0' => ch = '\0',
                 c => {
-                    self.error_at(&format!("Неизвестная escape-последовательность: \\{}", c), start);
+                    self.error_at(&format!("Unknown escape sequence: \\{}", c), start);
                     ch = c;
                 }
             }
@@ -392,12 +391,12 @@ impl Lexer {
         self.advance();
 
         if self.peek() == '\'' {
-            self.advance(); // закрывающая кавычка
+            self.advance(); // closing quote
         } else {
-            self.error_at("Ожидалась закрывающая кавычка '", start);
+            self.error_at("Expected closing quote '", start);
         }
 
-        self.push_token_at(TokenKind::Символ(ch), &format!("'{}'", ch), start);
+        self.push_token_at(TokenKind::Char(ch), &format!("'{}'", ch), start);
     }
 
     fn skip_line_comment(&mut self) {
@@ -411,7 +410,7 @@ impl Lexer {
             self.advance();
         }
 
-        self.push_token_at(TokenKind::Комментарий(comment.clone()), &format!("//{}", comment), start);
+        self.push_token_at(TokenKind::Comment(comment.clone()), &format!("//{}", comment), start);
     }
 
     fn skip_block_comment(&mut self) {
@@ -439,13 +438,13 @@ impl Lexer {
         }
 
         if depth > 0 {
-            self.error_at("Незакрытый блочный комментарий", start);
+            self.error_at("Unclosed block comment", start);
         }
 
-        self.push_token_at(TokenKind::Комментарий(comment), "", start);
+        self.push_token_at(TokenKind::Comment(comment), "", start);
     }
 
-    // ============ Вспомогательные методы ============
+    // ============ Helper methods ============
 
     fn peek(&self) -> char {
         self.source.get(self.pos).copied().unwrap_or('\0')
@@ -509,7 +508,7 @@ impl Lexer {
 
     fn error(&mut self, message: &str) {
         self.errors.push(Diagnostic {
-            kind: DiagnosticKind::Ошибка,
+            kind: DiagnosticKind::Error,
             message: message.to_string(),
             span: self.current_span(),
             hint: None,
@@ -518,7 +517,7 @@ impl Lexer {
 
     fn error_at(&mut self, message: &str, span: Span) {
         self.errors.push(Diagnostic {
-            kind: DiagnosticKind::Ошибка,
+            kind: DiagnosticKind::Error,
             message: message.to_string(),
             span,
             hint: None,

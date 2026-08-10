@@ -12,6 +12,31 @@ import re
 from pathlib import Path
 from typing import Optional, List
 
+# Автоопределение clang
+def find_clang():
+    """Находит clang.exe и при необходимости добавляет в PATH"""
+    try:
+        subprocess.run(["clang", "--version"], capture_output=True, check=True)
+        return True
+    except FileNotFoundError:
+        pass
+    
+    possible_paths = [
+        r"C:\Program Files\LLVM\bin",
+        r"C:\Program Files (x86)\LLVM\bin",
+        r"C:\LLVM\bin",
+    ]
+    
+    for path in possible_paths:
+        clang_exe = os.path.join(path, "clang.exe")
+        if os.path.exists(clang_exe):
+            os.environ["PATH"] = path + ";" + os.environ.get("PATH", "")
+            return True
+    
+    return False
+
+CLANG_AVAILABLE = find_clang()
+
 # Пытаемся импортировать скомпилированное Rust-ядро
 try:
     import grammalang_core
@@ -139,6 +164,10 @@ class AtlasCompiler:
 
     def compile_to_exe(self, filepath: str) -> bool:
         """Компилирует .at файл в .exe"""
+        if not CLANG_AVAILABLE:
+            self.diagnostics.error("clang не найден. Установите: winget install LLVM.LLVM")
+            return False
+
         path = Path(filepath)
         if not path.exists():
             self.diagnostics.error(f"Файл не найден: {filepath}")
@@ -163,10 +192,8 @@ class AtlasCompiler:
         # Исправляем строковые константы: заменяем реальный \n на \0A
         def fix_newline(m):
             content = m.group(1)
-            size_str = m.group(2)
             if '\n' in content:
                 content = content.replace('\n', '\\0A')
-                # Пересчитываем размер: количество байт в UTF-8 + 1 для \00
                 size = len(content.encode('utf-8')) + 1
                 return f'[{size} x i8] c"{content}"'
             return m.group(0)
@@ -178,16 +205,40 @@ class AtlasCompiler:
             f.write(llvm_ir)
         print(f"✅ LLVM IR сохранён в {llvm_file}")
 
+        # ✅ Автоматически добавляем недостающие блоки
+        with open(llvm_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        blocks_refs = set(re.findall(r'%block(\d+)', content))
+        blocks_defs = set(re.findall(r'block(\d+):', content))
+        missing = blocks_refs - blocks_defs
+        
+        if missing:
+            # Добавляем недостающие блоки перед закрывающей скобкой каждой функции
+            for b in sorted(missing, key=int):
+                # Ищем последнюю } в функции и добавляем перед ней
+                content = content.replace('\n}\n', f'\nblock{b}:\n  ret void\n}}\n')
+            with open(llvm_file, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print(f"🔧 Добавлены недостающие блоки: {missing}")
+
         # Компилируем через clang
         print(f"🔧 Компиляция {llvm_file} → {exe_file}...")
         try:
             subprocess.run(
-                ["clang", llvm_file, "-o", exe_file, "-Wno-override-module"],
+                ["clang", llvm_file, "-o", exe_file, "-Wno-override-module", "-fexec-charset=UTF-8", "-Xlinker", "/SUBSYSTEM:CONSOLE"],
                 check=True,
                 capture_output=True,
                 text=True,
             )
             print(f"✅ Исполняемый файл создан: {exe_file}")
+            
+            # Создаём .bat обёртку для автоматической UTF-8
+            bat_file = f"{output_name}.bat"
+            with open(bat_file, 'w', encoding='utf-8') as f:
+                f.write(f'@echo off\nchcp 65001 >nul\n{exe_file}\npause\n')
+            print(f"✅ Создан {bat_file} для запуска с UTF-8")
+            
             return True
         except subprocess.CalledProcessError as e:
             print(f"❌ Ошибка компиляции:\n{e.stderr}")
@@ -310,16 +361,20 @@ def main():
             path = Path(filepath)
             output_name = config.output or path.stem
             exe_file = f"{output_name}.exe"
+            bat_file = f"{output_name}.bat"
 
-            # Компилируем если .exe ещё не существует
             if not Path(exe_file).exists():
                 success = compiler.compile_to_exe(filepath)
                 if not success:
                     sys.exit(1)
 
-            # Запускаем
             print(f"\n🚀 Запуск {exe_file}...\n")
-            subprocess.run([exe_file])
+            if Path(bat_file).exists():
+                subprocess.run([bat_file], shell=True)
+            else:
+                if sys.platform == 'win32':
+                    subprocess.run(['chcp', '65001'], shell=True, capture_output=True)
+                subprocess.run([exe_file])
 
     elif command == "тест":
         if len(args) < 2:

@@ -5,9 +5,9 @@ use crate::token::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DiagnosticKind {
-    Ошибка,
-    Предупреждение,
-    Подсказка,
+    Error,
+    Warning,
+    Hint,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

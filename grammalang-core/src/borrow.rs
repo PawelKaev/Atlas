@@ -5,16 +5,16 @@ use std::collections::{HashMap, HashSet};
 use crate::ast::*;
 use crate::error::{Diagnostic, DiagnosticKind};
 
-/// Право доступа к переменной
+/// Access right to a variable
 #[derive(Debug, Clone, PartialEq)]
 enum Access {
-    Владеет,
-    ЗаимствованаНеизменяемо(HashSet<String>),
-    ЗаимствованаИзменяемо(String),
-    Перемещена,
+    Owns,
+    BorrowedImmutable(HashSet<String>),
+    BorrowedMutable(String),
+    Moved,
 }
 
-/// Состояние borrow checker'а
+/// Borrow checker state
 pub struct BorrowChecker {
     access: HashMap<String, Access>,
     regions: Vec<(String, String)>,
@@ -38,8 +38,8 @@ impl BorrowChecker {
 
         if !self.check_region_cycles() {
             self.errors.push(Diagnostic {
-                kind: DiagnosticKind::Ошибка,
-                message: "Обнаружен циклический граф времён жизни".to_string(),
+                kind: DiagnosticKind::Error,
+                message: "Cyclic lifetime graph detected".to_string(),
                 span: Span { line: 0, column: 0, offset: 0 },
                 hint: None,
             });
@@ -54,66 +54,66 @@ impl BorrowChecker {
         format!("'r{}", id)
     }
 
-    // ============ Обход AST ============
+    // ============ AST traversal ============
 
     fn check_node(&mut self, node: &Ast) {
         match node {
-            Ast::Модуль { объявления, .. } => {
-                for decl in объявления {
+            Ast::Module { declarations, .. } => {
+                for decl in declarations {
                     self.check_node(decl);
                 }
             }
 
-            Ast::ОбъявлениеФункции { параметры, тело, .. } => {
+            Ast::FnDecl { params, body, .. } => {
                 let saved = self.access.clone();
 
-                for param in параметры {
-                    self.access.insert(param.имя.clone(), Access::Владеет);
+                for param in params {
+                    self.access.insert(param.name.clone(), Access::Owns);
                 }
 
-                self.check_node(тело);
+                self.check_node(body);
                 self.access = saved;
             }
 
-            Ast::Блок { выражения, .. } => {
+            Ast::Block { expressions, .. } => {
                 let saved = self.access.clone();
 
-                for expr in выражения {
+                for expr in expressions {
                     self.check_node(expr);
                 }
 
                 self.access = saved;
             }
 
-            Ast::БлокОбласти { выражения, последнее, замыкания, .. } => {
+            Ast::ScopeBlock { expressions, last, captures, .. } => {
                 let saved = self.access.clone();
 
-                for expr in выражения {
+                for expr in expressions {
                     self.check_node(expr);
                 }
-                if let Some(last) = последнее {
+                if let Some(last) = last {
                     self.check_node(last);
                 }
                 
-                for захват in замыкания {
-                    match self.access.get(&захват.имя) {
-                        Some(Access::Владеет) => {
-                            if захват.по_ссылке {
+                for capture in captures {
+                    match self.access.get(&capture.name) {
+                        Some(Access::Owns) => {
+                            if capture.by_ref {
                                 let region = self.fresh_region();
                                 let mut refs = HashSet::new();
                                 refs.insert(region.clone());
                                 self.access.insert(
-                                    захват.имя.clone(),
-                                    Access::ЗаимствованаНеизменяемо(refs),
+                                    capture.name.clone(),
+                                    Access::BorrowedImmutable(refs),
                                 );
                             } else {
-                                self.access.insert(захват.имя.clone(), Access::Перемещена);
+                                self.access.insert(capture.name.clone(), Access::Moved);
                             }
                         }
-                        Some(Access::ЗаимствованаНеизменяемо(refs)) if !захват.изменяемый => {
+                        Some(Access::BorrowedImmutable(refs)) if !capture.mutable => {
                             let mut new_refs = refs.clone();
                             new_refs.insert(self.fresh_region());
-                            self.access.insert(захват.имя.clone(), Access::ЗаимствованаНеизменяемо(new_refs));
+                            self.access.insert(capture.name.clone(), Access::BorrowedImmutable(new_refs));
                         }
                         _ => {}
                     }
@@ -122,87 +122,87 @@ impl BorrowChecker {
                 self.access = saved;
             }
 
-            Ast::Пусть { имя, значение, .. } => {
-                self.check_node(значение);
-                self.access.insert(имя.clone(), Access::Владеет);
+            Ast::Let { name, value, .. } => {
+                self.check_node(value);
+                self.access.insert(name.clone(), Access::Owns);
             }
 
-            Ast::Присваивание { имя, значение, .. } => {
-                self.check_node(значение);
-                self.access.insert(имя.clone(), Access::Владеет);
+            Ast::Assign { name, value, .. } => {
+                self.check_node(value);
+                self.access.insert(name.clone(), Access::Owns);
             }
 
-            Ast::ПрисваиваниеСОперацией { имя, значение, .. } => {
-                self.check_node(значение);
-                if let Some(Access::Перемещена) = self.access.get(имя) {
+            Ast::OpAssign { name, value, .. } => {
+                self.check_node(value);
+                if let Some(Access::Moved) = self.access.get(name) {
                     self.errors.push(Diagnostic {
-                        kind: DiagnosticKind::Ошибка,
-                        message: format!("Нельзя изменить '{}' — переменная перемещена", имя),
+                        kind: DiagnosticKind::Error,
+                        message: format!("Cannot modify '{}' — variable has been moved", name),
                         span: *node.span(),
                         hint: None,
                     });
                 }
             }
 
-            Ast::ПрисваиваниеОбразца { образец, значение, .. } => {
-                self.check_node(значение);
-                self.add_pattern_vars(образец);
+            Ast::PatternAssign { pattern, value, .. } => {
+                self.check_node(value);
+                self.add_pattern_vars(pattern);
             }
 
-            Ast::ОбновлениеСтруктуры { объект, поля, .. } => {
-                self.check_node(объект);
-                for (_, value) in поля {
+            Ast::StructUpdate { object, fields, .. } => {
+                self.check_node(object);
+                for (_, value) in fields {
                     self.check_node(value);
                 }
             }
 
-            Ast::Заимствование { изменяемое, значение, span, .. } => {
-                if let Ast::Переменная { имя, .. } = значение.as_ref() {
+            Ast::Borrow { mutable, value, span, .. } => {
+                if let Ast::Variable { name, .. } = value.as_ref() {
                     let region = self.fresh_region();
 
-                    match self.access.get(имя) {
-                        Some(Access::Владеет) => {
-                            if *изменяемое {
-                                self.access.insert(имя.clone(), Access::ЗаимствованаИзменяемо(region.clone()));
+                    match self.access.get(name) {
+                        Some(Access::Owns) => {
+                            if *mutable {
+                                self.access.insert(name.clone(), Access::BorrowedMutable(region.clone()));
                             } else {
                                 let mut refs = HashSet::new();
                                 refs.insert(region.clone());
-                                self.access.insert(имя.clone(), Access::ЗаимствованаНеизменяемо(refs));
+                                self.access.insert(name.clone(), Access::BorrowedImmutable(refs));
                             }
                         }
-                        Some(Access::ЗаимствованаНеизменяемо(refs)) if !изменяемое => {
+                        Some(Access::BorrowedImmutable(refs)) if !mutable => {
                             let mut refs = refs.clone();
                             refs.insert(region.clone());
-                            self.access.insert(имя.clone(), Access::ЗаимствованаНеизменяемо(refs));
+                            self.access.insert(name.clone(), Access::BorrowedImmutable(refs));
                         }
-                        Some(Access::ЗаимствованаНеизменяемо(_)) => {
+                        Some(Access::BorrowedImmutable(_)) => {
                             self.errors.push(Diagnostic {
-                                kind: DiagnosticKind::Ошибка,
-                                message: format!("Нельзя создать изменяемую ссылку на '{}', потому что она уже заимствована неизменяемо", имя),
+                                kind: DiagnosticKind::Error,
+                                message: format!("Cannot mutably borrow '{}' — it is already immutably borrowed", name),
                                 span: *span,
                                 hint: None,
                             });
                         }
-                        Some(Access::ЗаимствованаИзменяемо(existing)) => {
+                        Some(Access::BorrowedMutable(existing)) => {
                             self.errors.push(Diagnostic {
-                                kind: DiagnosticKind::Ошибка,
-                                message: format!("Нельзя заимствовать '{}', потому что она уже заимствована изменяемо (регион {})", имя, existing),
+                                kind: DiagnosticKind::Error,
+                                message: format!("Cannot borrow '{}' — it is already mutably borrowed (region {})", name, existing),
                                 span: *span,
                                 hint: None,
                             });
                         }
-                        Some(Access::Перемещена) => {
+                        Some(Access::Moved) => {
                             self.errors.push(Diagnostic {
-                                kind: DiagnosticKind::Ошибка,
-                                message: format!("Нельзя заимствовать '{}', потому что она была перемещена", имя),
+                                kind: DiagnosticKind::Error,
+                                message: format!("Cannot borrow '{}' — it has been moved", name),
                                 span: *span,
                                 hint: None,
                             });
                         }
                         None => {
                             self.errors.push(Diagnostic {
-                                kind: DiagnosticKind::Ошибка,
-                                message: format!("Неизвестная переменная: '{}'", имя),
+                                kind: DiagnosticKind::Error,
+                                message: format!("Unknown variable: '{}'", name),
                                 span: *span,
                                 hint: None,
                             });
@@ -211,40 +211,40 @@ impl BorrowChecker {
                 }
             }
 
-            Ast::Перемещение { значение, span } => {
-                if let Ast::Переменная { имя, .. } = значение.as_ref() {
-                    match self.access.get(имя) {
-                        Some(Access::Владеет) => {
-                            self.access.insert(имя.clone(), Access::Перемещена);
+            Ast::Move { value, span } => {
+                if let Ast::Variable { name, .. } = value.as_ref() {
+                    match self.access.get(name) {
+                        Some(Access::Owns) => {
+                            self.access.insert(name.clone(), Access::Moved);
                         }
-                        Some(Access::ЗаимствованаНеизменяемо(_)) => {
+                        Some(Access::BorrowedImmutable(_)) => {
                             self.errors.push(Diagnostic {
-                                kind: DiagnosticKind::Ошибка,
-                                message: format!("Нельзя переместить '{}', потому что она заимствована", имя),
+                                kind: DiagnosticKind::Error,
+                                message: format!("Cannot move '{}' — it is borrowed", name),
                                 span: *span,
                                 hint: None,
                             });
                         }
-                        Some(Access::ЗаимствованаИзменяемо(_)) => {
+                        Some(Access::BorrowedMutable(_)) => {
                             self.errors.push(Diagnostic {
-                                kind: DiagnosticKind::Ошибка,
-                                message: format!("Нельзя переместить '{}', потому что она заимствована изменяемо", имя),
+                                kind: DiagnosticKind::Error,
+                                message: format!("Cannot move '{}' — it is mutably borrowed", name),
                                 span: *span,
                                 hint: None,
                             });
                         }
-                        Some(Access::Перемещена) => {
+                        Some(Access::Moved) => {
                             self.errors.push(Diagnostic {
-                                kind: DiagnosticKind::Ошибка,
-                                message: format!("'{}' уже была перемещена", имя),
+                                kind: DiagnosticKind::Error,
+                                message: format!("'{}' has already been moved", name),
                                 span: *span,
                                 hint: None,
                             });
                         }
                         None => {
                             self.errors.push(Diagnostic {
-                                kind: DiagnosticKind::Ошибка,
-                                message: format!("Неизвестная переменная: '{}'", имя),
+                                kind: DiagnosticKind::Error,
+                                message: format!("Unknown variable: '{}'", name),
                                 span: *span,
                                 hint: None,
                             });
@@ -253,157 +253,161 @@ impl BorrowChecker {
                 }
             }
 
-            Ast::Вызов { функция, аргументы, .. } => {
-                self.check_node(функция);
-                for arg in аргументы {
+            Ast::Call { function, arguments, .. } => {
+                self.check_node(function);
+                for arg in arguments {
                     self.check_node(arg);
                 }
             }
 
-            Ast::ДвоичноеВыражение { левое, правое, .. } => {
-                self.check_node(левое);
-                self.check_node(правое);
+            Ast::BinExpr { left, right, .. } => {
+                self.check_node(left);
+                self.check_node(right);
             }
 
-            Ast::УнарноеВыражение { операнд, .. } => {
-                self.check_node(операнд);
+            Ast::UnaryExpr { operand, .. } => {
+                self.check_node(operand);
             }
 
-            Ast::Сопоставление { значение, ветки, .. } => {
-                self.check_node(значение);
-                for ветка in ветки {
+            Ast::Match { value, arms, .. } => {
+                self.check_node(value);
+                for arm in arms {
                     let saved = self.access.clone();
-                    self.add_pattern_vars(&ветка.образец);
+                    self.add_pattern_vars(&arm.pattern);
 
-                    if let Some(ref условие) = ветка.условие {
-                        self.check_node(условие);
+                    if let Some(ref condition) = arm.condition {
+                        self.check_node(condition);
                     }
-                    self.check_node(&ветка.тело);
+                    self.check_node(&arm.body);
 
                     self.access = saved;
                 }
             }
 
-            Ast::Если { условие, то, иначе, .. } => {
-                self.check_node(условие);
-                self.check_node(то);
-                if let Some(else_branch) = иначе {
+            Ast::If { condition, then, else_arm, .. } => {
+                self.check_node(condition);
+                self.check_node(then);
+                if let Some(else_branch) = else_arm {
                     self.check_node(else_branch);
                 }
             }
 
-            Ast::Пока { условие, тело, .. } => {
-                self.check_node(условие);
-                self.check_node(тело);
+            Ast::While { condition, body, .. } => {
+                self.check_node(condition);
+                self.check_node(body);
             }
 
-            Ast::ЦиклПока { условие, тело, .. } => {
-                self.check_node(условие);
-                self.check_node(тело);
+            Ast::LoopWhile { condition, body, .. } => {
+                self.check_node(condition);
+                self.check_node(body);
             }
 
-            Ast::ЦиклДля { переменная, итератор, тело, .. } => {
-                self.check_node(итератор);
+            Ast::ForLoop { variable, iterator, body, .. } => {
+                self.check_node(iterator);
                 let saved = self.access.clone();
-                self.access.insert(переменная.clone(), Access::Владеет);
-                self.check_node(тело);
+                self.access.insert(variable.clone(), Access::Owns);
+                self.check_node(body);
                 self.access = saved;
             }
 
-            Ast::Цикл { тело, .. } => {
-                self.check_node(тело);
+            Ast::Loop { body, .. } => {
+                self.check_node(body);
             }
 
-            Ast::Прервать { значение, .. } => {
-                if let Some(val) = значение {
+            Ast::Break { value, .. } => {
+                if let Some(val) = value {
                     self.check_node(val);
                 }
             }
 
-            Ast::Продолжить { .. } => {}
+            Ast::Continue { .. } => {}
 
-            Ast::Возврат { значение, .. } => {
-                if let Some(val) = значение {
+            Ast::Return { value, .. } => {
+                if let Some(val) = value {
                     self.check_node(val);
                 }
             }
 
-            Ast::БлокЭффекта { тело, .. } => {
-                self.check_node(тело);
+            Ast::EffectBlock { body, .. } => {
+                self.check_node(body);
             }
 
-            Ast::ПараллельныйБлок { тело, .. } => {
-                self.check_node(тело);
+            Ast::ParallelBlock { body, .. } => {
+                self.check_node(body);
             }
 
-            Ast::РучнойБлок { тело, .. } => {
-                self.check_node(тело);
+            Ast::UnsafeBlock { body, .. } => {
+                self.check_node(body);
             }
 
-            Ast::ДоступКПолю { объект, .. } => {
-                self.check_node(объект);
+            Ast::FieldAccess { object, .. } => {
+                self.check_node(object);
             }
 
-            Ast::КонструкторСтруктуры { поля, .. } => {
-                for (_, value) in поля {
+            Ast::StructCons { fields, .. } => {
+                for (_, value) in fields {
                     self.check_node(value);
                 }
             }
 
-            Ast::КонструкторСуммы { значение, .. } => {
-                if let Some(val) = значение {
+            Ast::SumCons { value, .. } => {
+                if let Some(val) = value {
                     self.check_node(val);
                 }
             }
 
-            Ast::Лямбда { параметры, тело, .. } => {
+            Ast::Lambda { params, body, .. } => {
                 let saved = self.access.clone();
-                for param in параметры {
-                    self.access.insert(param.имя.clone(), Access::Владеет);
+                for param in params {
+                    self.access.insert(param.name.clone(), Access::Owns);
                 }
-                self.check_node(тело);
+                self.check_node(body);
                 self.access = saved;
             }
 
-            Ast::Переменная { имя, span, .. } => {
-                if let Some(Access::Перемещена) = self.access.get(имя) {
+            Ast::Variable { name, span, .. } => {
+                if let Some(Access::Moved) = self.access.get(name) {
                     self.errors.push(Diagnostic {
-                        kind: DiagnosticKind::Ошибка,
-                        message: format!("Переменная '{}' была перемещена и больше не доступна", имя),
+                        kind: DiagnosticKind::Error,
+                        message: format!("Variable '{}' was moved and is no longer available", name),
                         span: *span,
                         hint: None,
                     });
                 }
             }
 
-            Ast::Литерал { .. } => {}
-            Ast::Цитирование { .. } => {}
-            Ast::Вставка { .. } => {}
-            Ast::ВызовМакроса { .. } => {}
-            Ast::ОбъявлениеИмпорта { .. } => {}
-            Ast::ОбъявлениеВнешнейФункции { .. } => {}
-            Ast::ОбъявлениеСтруктуры { .. } => {}
-            Ast::ОбъявлениеСуммы { .. } => {}
+            Ast::Literal { .. } => {}
+            Ast::Quote { .. } => {}
+            Ast::Splice { .. } => {}
+            Ast::MacroCall { .. } => {}
+            Ast::ImportDecl { .. } => {}
+            Ast::ExternFnDecl { .. } => {}
+            Ast::StructDecl { .. } => {}
+            Ast::ReflexiveCascade { subject, context, .. } => {
+                self.check_node(subject);
+                self.check_node(context);
+            }
+            Ast::SumDecl { .. } => {}
         }
     }
 
-    fn add_pattern_vars(&mut self, pattern: &Образец) {
+    fn add_pattern_vars(&mut self, pattern: &Pattern) {
         match pattern {
-            Образец::Переменная(name) => {
-                self.access.insert(name.clone(), Access::Владеет);
+            Pattern::Variable(name) => {
+                self.access.insert(name.clone(), Access::Owns);
             }
-            Образец::Конструктор { вложенный, .. } => {
-                if let Some(inner) = вложенный {
+            Pattern::Constructor { nested, .. } => {
+                if let Some(inner) = nested {
                     self.add_pattern_vars(inner);
                 }
             }
-            Образец::Кортеж(элементы) | Образец::Список { элементы: элементы, .. } => {
-                for elem in элементы {
+            Pattern::Tuple(elements) | Pattern::List { elements, .. } => {
+                for elem in elements {
                     self.add_pattern_vars(elem);
                 }
             }
-            Образец::Структура { поля, .. } => {
-                for (_, pattern) in поля {
+            Pattern::Struct { fields, .. } => {
+                for (_, pattern) in fields {
                     self.add_pattern_vars(pattern);
                 }
             }
@@ -411,7 +415,7 @@ impl BorrowChecker {
         }
     }
 
-    // ============ Проверка графа регионов ============
+    // ============ Region graph cycle check ============
 
     fn check_region_cycles(&self) -> bool {
         let mut graph: HashMap<&str, Vec<&str>> = HashMap::new();

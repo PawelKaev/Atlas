@@ -18,8 +18,16 @@ pub mod types;
 pub mod infer;
 pub mod borrow;
 pub mod codegen;
+pub mod monomorphize;
+pub mod syntax_modifiers;
+pub mod lefebvre;
+pub mod cascade;
+pub mod entity;
+pub mod context;
+pub mod llm_resolver;
+pub mod evaluator;
 
-// ============ Экспорт в Python ============
+// ============ Python export ============
 
 #[pyfunction]
 fn analyze_will(sentences: Vec<String>) -> PyResult<Vec<f64>> {
@@ -32,7 +40,7 @@ fn tokenize_atlas(source: &str) -> PyResult<String> {
     let (tokens, errors) = lex.tokenize();
     if !errors.is_empty() {
         return Err(pyo3::exceptions::PySyntaxError::new_err(
-            errors.iter().map(|e| format!("{} в {}", e.message, e.span)).collect::<Vec<_>>().join("\n")
+            errors.iter().map(|e| format!("{} at {}", e.message, e.span)).collect::<Vec<_>>().join("\n")
         ));
     }
     Ok(tokens.iter()
@@ -86,85 +94,97 @@ fn desugar_atlas(source: &str) -> PyResult<String> {
         }
         Ok(format!("{:#?}", ast))
     } else {
-        Err(pyo3::exceptions::PyRuntimeError::new_err("Не удалось разобрать программу"))
+        Err(pyo3::exceptions::PyRuntimeError::new_err("Failed to parse program"))
     }
 }
 
 #[pyfunction]
 fn compile_atlas(source: &str) -> PyResult<String> {
-    // Лексер
+    // Lexer
     let mut lex = lexer::Lexer::new(source);
     let (tokens, lex_errors) = lex.tokenize();
     if !lex_errors.is_empty() {
         return Err(pyo3::exceptions::PySyntaxError::new_err(
-            lex_errors.iter().map(|e| format!("Лексер: {}", e.message)).collect::<Vec<_>>().join("\n")
+            lex_errors.iter().map(|e| format!("Lexer: {}", e.message)).collect::<Vec<_>>().join("\n")
         ));
     }
 
-    // Парсер
+    // Parser
     let mut parser = parser::Parser::new(tokens);
     let (cst, parse_errors) = parser.parse();
     if !parse_errors.is_empty() {
         return Err(pyo3::exceptions::PySyntaxError::new_err(
-            parse_errors.iter().map(|e| format!("Парсер: {}", e.message)).collect::<Vec<_>>().join("\n")
+            parse_errors.iter().map(|e| format!("Parser: {}", e.message)).collect::<Vec<_>>().join("\n")
         ));
     }
-    let cst = cst.ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Парсер не вернул CST"))?;
+    let cst = cst.ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Parser returned no CST"))?;
 
-    // Десахаринг
+    // Desugaring
     let mut desugarer = desugar::Desugarer::new();
     let (ast, desugar_errors) = desugarer.desugar(&cst);
     if !desugar_errors.is_empty() {
         return Err(pyo3::exceptions::PySyntaxError::new_err(
-            desugar_errors.iter().map(|e| format!("Десахаринг: {}", e.message)).collect::<Vec<_>>().join("\n")
+            desugar_errors.iter().map(|e| format!("Desugar: {}", e.message)).collect::<Vec<_>>().join("\n")
         ));
     }
-    let ast = ast.ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Десахаринг не удался"))?;
+    let ast = ast.ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Desugaring failed"))?;
 
-    // Разрешение имён
+    // Name resolution
     let mut resolver = resolve::Resolver::new();
     let (resolved_ast, resolve_errors) = resolver.resolve(&ast);
     if !resolve_errors.is_empty() {
         return Err(pyo3::exceptions::PySyntaxError::new_err(
-            resolve_errors.iter().map(|e| format!("Разрешение: {}", e.message)).collect::<Vec<_>>().join("\n")
+            resolve_errors.iter().map(|e| format!("Resolution: {}", e.message)).collect::<Vec<_>>().join("\n")
         ));
     }
-    let resolved_ast = resolved_ast.ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Разрешение имён не удалось"))?;
+    let resolved_ast = resolved_ast.ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Name resolution failed"))?;
 
-    // Вывод типов
+    // Type inference
     let mut inferrer = infer::Inferrer::new();
     let (typed_ast, infer_errors) = inferrer.infer(&resolved_ast);
     if !infer_errors.is_empty() {
         return Err(pyo3::exceptions::PySyntaxError::new_err(
-            infer_errors.iter().map(|e| format!("Типизация: {}", e.message)).collect::<Vec<_>>().join("\n")
+            infer_errors.iter().map(|e| format!("Typing: {}", e.message)).collect::<Vec<_>>().join("\n")
         ));
     }
-    let typed_ast = typed_ast.ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Вывод типов не удался"))?;
+    let typed_ast = typed_ast.ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Type inference failed"))?;
 
-    // Проверка заимствований
+    // Monomorphization of generics
+    let mut monomorphizer = monomorphize::Monomorphizer::new();
+    let mono_ast = monomorphizer.monomorphize(&typed_ast);
+
+    // Borrow checking
     let mut checker = borrow::BorrowChecker::new();
-    let (success, borrow_errors) = checker.check(&typed_ast);
+    let (success, borrow_errors) = checker.check(&mono_ast);
     if !success {
         return Err(pyo3::exceptions::PySyntaxError::new_err(
-            borrow_errors.iter().map(|e| format!("Заимствование: {}", e.message)).collect::<Vec<_>>().join("\n")
+            borrow_errors.iter().map(|e| format!("Borrow: {}", e.message)).collect::<Vec<_>>().join("\n")
         ));
     }
 
-    // Кодогенерация
+    // Code generation
     let mut codegen = codegen::Codegen::new("main");
-    let (ir, codegen_errors) = codegen.generate(&typed_ast);
+    let (ir, codegen_errors) = codegen.generate(&mono_ast);
     if !codegen_errors.is_empty() {
         return Err(pyo3::exceptions::PyRuntimeError::new_err(
-            codegen_errors.iter().map(|e| format!("Кодогенерация: {}", e.message)).collect::<Vec<_>>().join("\n")
+            codegen_errors.iter().map(|e| format!("Codegen: {}", e.message)).collect::<Vec<_>>().join("\n")
         ));
     }
 
     if let Some(ir) = ir {
         let llvm_text = codegen::Codegen::emit_llvm_text(&ir);
-        Ok(format!("Компиляция успешна!\n\nСгенерированный LLVM IR:\n\n{}", llvm_text))
+        Ok(format!("Compilation successful!\n\nGenerated LLVM IR:\n\n{}", llvm_text))
     } else {
-        Err(pyo3::exceptions::PyRuntimeError::new_err("Кодогенерация не вернула IR"))
+        Err(pyo3::exceptions::PyRuntimeError::new_err("Codegen returned no IR"))
     }
+}
+
+#[pyfunction]
+fn apply_syntax_modifiers(
+    lexical_indices: Vec<f64>,
+    syntax_types: Vec<String>,
+) -> PyResult<Vec<f64>> {
+    syntax_modifiers::apply_syntax_modifiers(lexical_indices, syntax_types)
 }
 
 #[pymodule]
@@ -174,5 +194,6 @@ fn grammalang_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(parse_atlas, m)?)?;
     m.add_function(wrap_pyfunction!(desugar_atlas, m)?)?;
     m.add_function(wrap_pyfunction!(compile_atlas, m)?)?;
+    m.add_function(wrap_pyfunction!(apply_syntax_modifiers, m)?)?;
     Ok(())
 }

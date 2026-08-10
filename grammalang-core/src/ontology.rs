@@ -1,20 +1,20 @@
 // grammalang-core/src/ontology.rs
+#![allow(dead_code, unused_variables, unused_imports)]
 
 use serde::{Deserialize, Serialize};
-use crate::error::Diagnostic;
+use std::collections::BTreeMap;
 
-/// Онтологическая категория
+/// Entity category in the ontology
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Category {
-    Сущность,
-    Свойство,
-    Отношение,
-    Событие,
-    Качество,
-    Количество,
+    Concept,
+    Relation,
+    Attribute,
+    Instance,
+    Axiom,
 }
 
-/// Онтологическая сущность
+/// Ontology entity
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entity {
     pub name: String,
@@ -22,51 +22,47 @@ pub struct Entity {
     pub properties: Vec<Property>,
 }
 
-/// Свойство сущности
+/// Entity property
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Property {
-    pub name: String,
+    pub key: String,
     pub value: PropertyValue,
 }
 
-/// Значение свойства
+/// Property value
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PropertyValue {
     String(String),
     Integer(i64),
     Float(f64),
     Boolean(bool),
-    Reference(String),
+    Timestamp(String),
+    Reference(String),  // reference to another entity
 }
 
-/// Онтологический движок
+/// Ontology engine — encapsulated draft specification
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OntologyEngine {
-    entities: Vec<Entity>,
+    entities: BTreeMap<String, Entity>,
 }
 
 impl OntologyEngine {
     pub fn new() -> Self {
-        OntologyEngine {
-            entities: Vec::new(),
-        }
+        OntologyEngine { entities: BTreeMap::new() }
     }
 
-    /// Добавить сущность
     pub fn add_entity(&mut self, entity: Entity) {
-        self.entities.push(entity);
+        self.entities.insert(entity.name.clone(), entity);
     }
 
-    /// Найти сущность по имени
     pub fn find_entity(&self, name: &str) -> Option<&Entity> {
-        self.entities.iter().find(|e| e.name == name)
+        self.entities.get(name)
     }
 
-    /// Получить все сущности заданной категории
     pub fn entities_by_category(&self, category: &Category) -> Vec<&Entity> {
-        self.entities.iter().filter(|e| &e.category == category).collect()
+        self.entities.values().filter(|e| &e.category == category).collect()
     }
 
-    /// Количество сущностей
     pub fn entity_count(&self) -> usize {
         self.entities.len()
     }

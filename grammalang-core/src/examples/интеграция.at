@@ -1,0 +1,47 @@
+структура Точка:
+    x: Int
+    y: Int
+
+function квадрат(n: Int) -> Int:
+    вернуть n * n
+
+function факthenриал(n: Int) -> Int:
+    если n <= 1:
+        вернуть 1
+    else_arm:
+        вернуть n * факthenриал(n - 1)
+
+function обратный_отсчёт(n: Int):
+    пока n > 0:
+        print(n)
+        n = n - 1
+
+function main():
+    print("=== Интеграционный тест Atlas ===")
+    print("")
+
+    print("1. Арифметика: 2 + 3 * 4")
+    print(2 + 3 * 4)
+    print("")
+
+    print("2. Fn квадрат(7):")
+    print(квадрат(7))
+    print("")
+
+    print("3. Факthenриал(5):")
+    print(факthenриал(5))
+    print("")
+
+    print("4. Обратный отсчёт от 5:")
+    обратный_отсчёт(5)
+    print("")
+
+    print("5. Struct Точка:")
+    p = Точка { x: 10, y: 20 }
+    print(p.x)
+    print(p.y)
+    print("")
+
+    print("=== Тест завершён ===")
+
+main()

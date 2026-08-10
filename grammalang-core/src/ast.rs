@@ -3,285 +3,321 @@
 use serde::{Deserialize, Serialize};
 use crate::token::Span;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EthicalSystem {
+    First,
+    Second,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Ast {
-    Модуль { имя: String, объявления: Vec<Ast>, span: Span },
-    ОбъявлениеФункции {
-        имя: String, параметры_типа: Vec<ПараметрТипа>, параметры: Vec<Параметр>,
-        возвращаемый_тип: Option<Тип>, тело: Box<Ast>, открыто: bool, span: Span,
+    Module { name: String, declarations: Vec<Ast>, span: Span },
+    FnDecl {
+        name: String, type_params: Vec<TypeParam>, params: Vec<Parameter>,
+        return_type: Option<Type>, body: Box<Ast>, public: bool, span: Span,
     },
-    ОбъявлениеСтруктуры {
-        имя: String, параметры_типа: Vec<ПараметрТипа>, поля: Vec<(String, Тип)>,
-        открыто: bool, span: Span,
+    StructDecl {
+        name: String, type_params: Vec<TypeParam>, fields: Vec<(String, Type)>,
+        public: bool, span: Span,
     },
-    ОбъявлениеСуммы {
-        имя: String, параметры_типа: Vec<ПараметрТипа>, варианты: Vec<ВариантСуммы>,
-        открыто: bool, span: Span,
+    SumDecl {
+        name: String, type_params: Vec<TypeParam>, variants: Vec<SumVariant>,
+        public: bool, span: Span,
     },
-    ОбъявлениеИмпорта { путь: Vec<String>, имена: Vec<(String, Option<String>)>, span: Span },
-    ОбъявлениеВнешнейФункции { язык: String, имя: String, параметры: Vec<Тип>, возвращаемый_тип: Option<Тип>, span: Span },
+    ImportDecl { path: Vec<String>, names: Vec<(String, Option<String>)>, span: Span },
+    ExternFnDecl { language: String, name: String, params: Vec<Type>, return_type: Option<Type>, span: Span },
     
-    ЦиклДля {
-        переменная: String,
-        итератор: Box<Ast>,
-        тело: Box<Ast>,
+    ForLoop {
+        variable: String,
+        iterator: Box<Ast>,
+        body: Box<Ast>,
         span: Span,
     },
     
-    ЦиклПока {
-        условие: Box<Ast>,
-        тело: Box<Ast>,
-        метка: Option<String>,
+    LoopWhile {
+        condition: Box<Ast>,
+        body: Box<Ast>,
+        label: Option<String>,
         span: Span,
     },
     
-    Цикл {
-        тело: Box<Ast>,
-        метка: Option<String>,
+    Loop {
+        body: Box<Ast>,
+        label: Option<String>,
         span: Span,
     },
     
-    Прервать {
-        метка: Option<String>,
-        значение: Option<Box<Ast>>,
+    Break {
+        label: Option<String>,
+        value: Option<Box<Ast>>,
         span: Span,
     },
     
-    Продолжить {
-        метка: Option<String>,
+    Continue {
+        label: Option<String>,
         span: Span,
     },
     
-    Пусть {
-        имя: String,
-        тип_аннотация: Option<Тип>,
-        изменяемая: bool,
-        значение: Box<Ast>,
+    Let {
+        name: String,
+        type_annotation: Option<Type>,
+        mutable: bool,
+        value: Box<Ast>,
         span: Span,
     },
     
-    БлокОбласти {
-        выражения: Vec<Ast>,
-        последнее: Option<Box<Ast>>,
-        замыкания: Vec<Захват>,
+    ScopeBlock {
+        expressions: Vec<Ast>,
+        last: Option<Box<Ast>>,
+        captures: Vec<Capture>,
         span: Span,
     },
     
-    ПрисваиваниеСОперацией {
-        имя: String,
-        оператор: БинарныйОператор,
-        значение: Box<Ast>,
+    OpAssign {
+        name: String,
+        operator: BinOp,
+        value: Box<Ast>,
         span: Span,
     },
     
-    ПрисваиваниеОбразца {
-        образец: Образец,
-        значение: Box<Ast>,
+    PatternAssign {
+        pattern: Pattern,
+        value: Box<Ast>,
         span: Span,
     },
     
-    // ✅ Обновление иммутабельной структуры: объект с { поле = значение, ... }
-    ОбновлениеСтруктуры {
-        объект: Box<Ast>,
-        поля: Vec<(String, Ast)>,
-        тип: Option<Тип>,
+    StructUpdate {
+        object: Box<Ast>,
+        fields: Vec<(String, Ast)>,
+        llvm_type: Option<Type>,
         span: Span,
     },
     
-    // Существующие варианты
-    Блок { выражения: Vec<Ast>, span: Span },
-    Присваивание { имя: String, тип_аннотация: Option<Тип>, изменяемая: bool, значение: Box<Ast>, span: Span },
-    ДвоичноеВыражение { левое: Box<Ast>, оператор: БинарныйОператор, правое: Box<Ast>, тип: Option<Тип>, span: Span },
-    УнарноеВыражение { оператор: УнарныйОператор, операнд: Box<Ast>, тип: Option<Тип>, span: Span },
-    Вызов { функция: Box<Ast>, аргументы: Vec<Ast>, тип: Option<Тип>, span: Span },
-    Лямбда { параметры: Vec<Параметр>, возвращаемый_тип: Option<Тип>, тело: Box<Ast>, span: Span },
-    Сопоставление { значение: Box<Ast>, ветки: Vec<ВеткаСопоставления>, тип: Option<Тип>, span: Span },
-    Если { условие: Box<Ast>, то: Box<Ast>, иначе: Option<Box<Ast>>, тип: Option<Тип>, span: Span },
-    Пока { условие: Box<Ast>, тело: Box<Ast>, span: Span },
-    Возврат { значение: Option<Box<Ast>>, span: Span },
-    КонструкторСтруктуры { имя: String, поля: Vec<(String, Ast)>, тип: Option<Тип>, span: Span },
-    КонструкторСуммы { имя: String, значение: Option<Box<Ast>>, тип: Option<Тип>, span: Span },
-    ДоступКПолю { объект: Box<Ast>, поле: String, тип: Option<Тип>, span: Span },
-    Заимствование { изменяемое: bool, значение: Box<Ast>, тип: Option<Тип>, span: Span },
-    Перемещение { значение: Box<Ast>, span: Span },
-    Цитирование { тело: Box<Ast>, span: Span },
-    Вставка { значение: Box<Ast>, span: Span },
-    БлокЭффекта { эффекты: Vec<String>, тело: Box<Ast>, span: Span },
-    ПараллельныйБлок { стратегия: СтратегияПараллельности, тело: Box<Ast>, span: Span },
-    РучнойБлок { тело: Box<Ast>, span: Span },
-    Переменная { имя: String, тип: Option<Тип>, span: Span },
-    Литерал { значение: Значение, span: Span },
-    ВызовМакроса { имя: String, аргументы: Vec<АргументМакроса>, span: Span },
+    ReflexiveCascade {
+        subject: Box<Ast>,
+        ethics_override: Option<EthicalSystem>,
+        context: Box<Ast>,
+        ethics: EthicalSystem,
+        depth: usize,
+        source_span: Span,
+    },
+    
+    Block { expressions: Vec<Ast>, span: Span },
+    Assign { name: String, type_annotation: Option<Type>, mutable: bool, value: Box<Ast>, span: Span },
+    BinExpr { left: Box<Ast>, operator: BinOp, right: Box<Ast>, llvm_type: Option<Type>, span: Span },
+    UnaryExpr { operator: UnaryOp, operand: Box<Ast>, llvm_type: Option<Type>, span: Span },
+    Call { function: Box<Ast>, arguments: Vec<Ast>, llvm_type: Option<Type>, span: Span },
+    Lambda { params: Vec<Parameter>, return_type: Option<Type>, body: Box<Ast>, span: Span },
+    Match { value: Box<Ast>, arms: Vec<MatchArm>, llvm_type: Option<Type>, span: Span },
+    If { condition: Box<Ast>, then: Box<Ast>, else_arm: Option<Box<Ast>>, llvm_type: Option<Type>, span: Span },
+    While { condition: Box<Ast>, body: Box<Ast>, span: Span },
+    Return { value: Option<Box<Ast>>, span: Span },
+    StructCons { name: String, fields: Vec<(String, Ast)>, llvm_type: Option<Type>, span: Span },
+    SumCons { name: String, value: Option<Box<Ast>>, llvm_type: Option<Type>, span: Span },
+    FieldAccess { object: Box<Ast>, field: String, llvm_type: Option<Type>, span: Span },
+    Borrow { mutable: bool, value: Box<Ast>, llvm_type: Option<Type>, span: Span },
+    Move { value: Box<Ast>, span: Span },
+    Quote { body: Box<Ast>, span: Span },
+    Splice { value: Box<Ast>, span: Span },
+    EffectBlock { effects: Vec<String>, body: Box<Ast>, span: Span },
+    ParallelBlock { strategy: ParallelStrategy, body: Box<Ast>, span: Span },
+    UnsafeBlock { body: Box<Ast>, span: Span },
+    Variable { name: String, llvm_type: Option<Type>, span: Span },
+    Literal { value: Value, span: Span },
+    MacroCall { name: String, arguments: Vec<MacroArg>, span: Span },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Захват {
-    pub имя: String,
-    pub по_ссылке: bool,
-    pub изменяемый: bool,
+pub struct Capture {
+    pub name: String,
+    pub by_ref: bool,
+    pub mutable: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Диапазон {
-    pub начало: Box<Ast>,
-    pub конец: Box<Ast>,
-    pub включая: bool,
+pub struct Range {
+    pub start: Box<Ast>,
+    pub end: Box<Ast>,
+    pub inclusive: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ПараметрТипа { pub имя: String, pub ограничения: Vec<String> }
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Параметр { pub имя: String, pub тип: Тип, pub изменяемый: bool }
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ВариантСуммы { pub имя: String, pub тип_данных: Option<Тип> }
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ВеткаСопоставления { pub образец: Образец, pub условие: Option<Box<Ast>>, pub тело: Box<Ast> }
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Образец {
-    Переменная(String),
-    Подчёркивание,
-    Литерал(Значение),
-    Конструктор { имя: String, вложенный: Option<Box<Образец>> },
-    Кортеж(Vec<Образец>),
-    Список { элементы: Vec<Образец>, хвост: Option<Box<Образец>> },
-    Структура { имя: String, поля: Vec<(String, Образец)>, открытый: bool },
-    Диапазон { начало: Значение, конец: Значение },
-    // Новые варианты для полноценного сопоставления
-    Или(Box<Образец>, Box<Образец>),
-    Привязка { имя: String, образец: Box<Образец> },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum БинарныйОператор {
-    Сложение, Вычитание, Умножение, Деление, Остаток,
-    Равно, НеРавно, Меньше, Больше, МеньшеРавно, БольшеРавно,
-    И, Или, Конкатенация,
-    ПобитовоеИ, ПобитовоеИли, ПобитовоеИсключающееИли,
-    СдвигВлево, СдвигВправо,
-    Присвоить,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum УнарныйОператор { 
-    Отрицание, Не, Вопрос,
-    Ссылка, Разыменование,
+pub struct TypeParam {
+    pub name: String,
+    pub constraints: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Значение { 
-    Целое(i64), Десятичное(f64), Строка(String), Булево(bool), Ничего,
-    Символ(char),
+pub struct Parameter {
+    pub name: String,
+    pub llvm_type: Type,
+    pub mutable: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum СтратегияПараллельности { БыстрыйОтказ, СобратьВсе }
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SumVariant {
+    pub name: String,
+    pub data_type: Option<Type>,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum АргументМакроса {
-    Выражение(Box<Ast>), Тип(Тип), Блок(Box<Ast>),
-    Идентификатор(String), Образец(Образец), Объявление(Box<Ast>),
+pub struct MatchArm {
+    pub pattern: Pattern,
+    pub condition: Option<Box<Ast>>,
+    pub body: Box<Ast>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Pattern {
+    Variable(String),
+    Wildcard,
+    Literal(Value),
+    Constructor { name: String, nested: Option<Box<Pattern>> },
+    Tuple(Vec<Pattern>),
+    List { elements: Vec<Pattern>, tail: Option<Box<Pattern>> },
+    Struct { name: String, fields: Vec<(String, Pattern)>, open: bool },
+    Range { start: Value, end: Value },
+    Or(Box<Pattern>, Box<Pattern>),
+    Binding { name: String, pattern: Box<Pattern> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ПримитивныйТип { 
-    Целое, Десятичное, Булево, Строка,
-    Символ, Байт, БеззнаковоеЦелое,
+pub enum BinOp {
+    Add, Sub, Mul, Div, Rem,
+    Eq, Neq, Lt, Gt, Le, Ge,
+    And, Or, Concat,
+    BitAnd, BitOr, BitXor,
+    Shl, Shr,
+    Assign,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UnaryOp {
+    Negate, Not, Question,
+    Ref, Deref,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Тип {
-    Переменная(String), Примитивный(ПримитивныйТип),
-    Параметризованный { имя: String, параметры: Vec<Тип> },
-    Функция { аргументы: Vec<Тип>, результат: Box<Тип> },
-    Запись(Vec<(String, Тип)>), Сумма(Vec<(String, Option<Тип>)>),
-    Ссылка { изменяемая: bool, тип: Box<Тип> },
-    Эффект { эффект: String, тип: Box<Тип> },
-    Уточнённый { базовый: Box<Тип>, условие: Box<Ast> },
-    Единичный, Пустой,
-    Массив { тип: Box<Тип>, размер: Option<usize> },
-    Срез { тип: Box<Тип> },
-    Диапазон,
-    Кортеж(Vec<Тип>),
-    Указатель { изменяемый: bool, тип: Box<Тип> },
+pub enum Value {
+    Int(i64), Float(f64), String(String), Bool(bool), Nil,
+    Char(char),
 }
 
-// Вспомогательные методы
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ParallelStrategy {
+    FailFast,
+    CollectAll,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum MacroArg {
+    Expression(Box<Ast>),
+    Type(Type),
+    Block(Box<Ast>),
+    Identifier(String),
+    Pattern(Pattern),
+    Declaration(Box<Ast>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PrimitiveType {
+    Int, Float, Bool, String,
+    Char, Byte, UnsignedInt,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Type {
+    Variable(String),
+    Primitive(PrimitiveType),
+    Parameterized { name: String, params: Vec<Type> },
+    Fn { arguments: Vec<Type>, result: Box<Type> },
+    Record(Vec<(String, Type)>),
+    Sum(Vec<(String, Option<Type>)>),
+    Ref { mutable: bool, llvm_type: Box<Type> },
+    Effect { effect: String, llvm_type: Box<Type> },
+    Refined { base: Box<Type>, condition: Box<Ast> },
+    Unit,
+    Void,
+    Array { llvm_type: Box<Type>, size: Option<usize> },
+    Slice { llvm_type: Box<Type> },
+    Range,
+    Tuple(Vec<Type>),
+    Pointer { mutable: bool, llvm_type: Box<Type> },
+}
+
 impl Ast {
     pub fn span(&self) -> &Span {
         match self {
-            Ast::Модуль { span, .. } => span,
-            Ast::ОбъявлениеФункции { span, .. } => span,
-            Ast::ОбъявлениеСтруктуры { span, .. } => span,
-            Ast::ОбъявлениеСуммы { span, .. } => span,
-            Ast::ОбъявлениеИмпорта { span, .. } => span,
-            Ast::ОбъявлениеВнешнейФункции { span, .. } => span,
-            Ast::ЦиклДля { span, .. } => span,
-            Ast::ЦиклПока { span, .. } => span,
-            Ast::Цикл { span, .. } => span,
-            Ast::Прервать { span, .. } => span,
-            Ast::Продолжить { span, .. } => span,
-            Ast::Пусть { span, .. } => span,
-            Ast::БлокОбласти { span, .. } => span,
-            Ast::ПрисваиваниеСОперацией { span, .. } => span,
-            Ast::ПрисваиваниеОбразца { span, .. } => span,
-            Ast::ОбновлениеСтруктуры { span, .. } => span,
-            Ast::Блок { span, .. } => span,
-            Ast::Присваивание { span, .. } => span,
-            Ast::ДвоичноеВыражение { span, .. } => span,
-            Ast::УнарноеВыражение { span, .. } => span,
-            Ast::Вызов { span, .. } => span,
-            Ast::Лямбда { span, .. } => span,
-            Ast::Сопоставление { span, .. } => span,
-            Ast::Если { span, .. } => span,
-            Ast::Пока { span, .. } => span,
-            Ast::Возврат { span, .. } => span,
-            Ast::КонструкторСтруктуры { span, .. } => span,
-            Ast::КонструкторСуммы { span, .. } => span,
-            Ast::ДоступКПолю { span, .. } => span,
-            Ast::Заимствование { span, .. } => span,
-            Ast::Перемещение { span, .. } => span,
-            Ast::Цитирование { span, .. } => span,
-            Ast::Вставка { span, .. } => span,
-            Ast::БлокЭффекта { span, .. } => span,
-            Ast::ПараллельныйБлок { span, .. } => span,
-            Ast::РучнойБлок { span, .. } => span,
-            Ast::Переменная { span, .. } => span,
-            Ast::Литерал { span, .. } => span,
-            Ast::ВызовМакроса { span, .. } => span,
+            Ast::Module { span, .. } => span,
+            Ast::FnDecl { span, .. } => span,
+            Ast::StructDecl { span, .. } => span,
+            Ast::SumDecl { span, .. } => span,
+            Ast::ImportDecl { span, .. } => span,
+            Ast::ExternFnDecl { span, .. } => span,
+            Ast::ForLoop { span, .. } => span,
+            Ast::LoopWhile { span, .. } => span,
+            Ast::Loop { span, .. } => span,
+            Ast::Break { span, .. } => span,
+            Ast::Continue { span, .. } => span,
+            Ast::Let { span, .. } => span,
+            Ast::ScopeBlock { span, .. } => span,
+            Ast::OpAssign { span, .. } => span,
+            Ast::PatternAssign { span, .. } => span,
+            Ast::StructUpdate { span, .. } => span,
+            Ast::ReflexiveCascade { source_span, .. } => source_span,
+            Ast::Block { span, .. } => span,
+            Ast::Assign { span, .. } => span,
+            Ast::BinExpr { span, .. } => span,
+            Ast::UnaryExpr { span, .. } => span,
+            Ast::Call { span, .. } => span,
+            Ast::Lambda { span, .. } => span,
+            Ast::Match { span, .. } => span,
+            Ast::If { span, .. } => span,
+            Ast::While { span, .. } => span,
+            Ast::Return { span, .. } => span,
+            Ast::StructCons { span, .. } => span,
+            Ast::SumCons { span, .. } => span,
+            Ast::FieldAccess { span, .. } => span,
+            Ast::Borrow { span, .. } => span,
+            Ast::Move { span, .. } => span,
+            Ast::Quote { span, .. } => span,
+            Ast::Splice { span, .. } => span,
+            Ast::EffectBlock { span, .. } => span,
+            Ast::ParallelBlock { span, .. } => span,
+            Ast::UnsafeBlock { span, .. } => span,
+            Ast::Variable { span, .. } => span,
+            Ast::Literal { span, .. } => span,
+            Ast::MacroCall { span, .. } => span,
         }
     }
     
-    pub fn это_выражение(&self) -> bool {
+    pub fn is_expression(&self) -> bool {
         matches!(self,
-            Ast::Литерал { .. } |
-            Ast::Переменная { .. } |
-            Ast::ДвоичноеВыражение { .. } |
-            Ast::УнарноеВыражение { .. } |
-            Ast::Вызов { .. } |
-            Ast::Лямбда { .. } |
-            Ast::Сопоставление { .. } |
-            Ast::Если { .. } |
-            Ast::Блок { .. } |
-            Ast::БлокОбласти { .. } |
-            Ast::Пусть { .. } |
-            Ast::Цикл { .. } |
-            Ast::ЦиклПока { .. } |
-            Ast::ЦиклДля { .. } |
-            Ast::КонструкторСтруктуры { .. } |
-            Ast::КонструкторСуммы { .. } |
-            Ast::ДоступКПолю { .. } |
-            Ast::ОбновлениеСтруктуры { .. }
+            Ast::Literal { .. } |
+            Ast::Variable { .. } |
+            Ast::BinExpr { .. } |
+            Ast::UnaryExpr { .. } |
+            Ast::Call { .. } |
+            Ast::Lambda { .. } |
+            Ast::Match { .. } |
+            Ast::If { .. } |
+            Ast::Block { .. } |
+            Ast::ScopeBlock { .. } |
+            Ast::Let { .. } |
+            Ast::Loop { .. } |
+            Ast::LoopWhile { .. } |
+            Ast::ForLoop { .. } |
+            Ast::StructCons { .. } |
+            Ast::SumCons { .. } |
+            Ast::FieldAccess { .. } |
+            Ast::StructUpdate { .. } |
+            Ast::ReflexiveCascade { .. }
         )
     }
 
-    /// Вспомогательный метод для клонирования оператора из ПрисваиваниеСОперацией
-    pub fn clone_operator(&self) -> Option<БинарныйОператор> {
+    pub fn clone_operator(&self) -> Option<BinOp> {
         match self {
-            Ast::ПрисваиваниеСОперацией { оператор, .. } => Some(оператор.clone()),
+            Ast::OpAssign { operator, .. } => Some(operator.clone()),
             _ => None,
         }
     }

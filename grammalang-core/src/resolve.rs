@@ -20,28 +20,28 @@ struct Scope {
 pub struct Symbol {
     pub kind: SymbolKind,
     pub span: Span,
-    pub публичный: bool,
+    pub public: bool,
 }
 
 #[derive(Debug, Clone)]
 pub enum SymbolKind {
-    Функция {
-        параметры_типа: Vec<ПараметрТипа>,
-        параметры: Vec<Параметр>,
-        возвращаемый_тип: Option<Тип>,
+    Fn {
+        type_params: Vec<TypeParam>,
+        params: Vec<Parameter>,
+        return_type: Option<Type>,
     },
-    Структура {
-        поля: Vec<(String, Тип)>,
+    Struct {
+        fields: Vec<(String, Type)>,
     },
-    Сумма {
-        варианты: Vec<(String, Option<Тип>)>,
+    Sum {
+        variants: Vec<(String, Option<Type>)>,
     },
-    Переменная {
-        тип: Option<Тип>,
-        изменяемая: bool,
+    Variable {
+        llvm_type: Option<Type>,
+        mutable: bool,
     },
-    Модуль {
-        символы: HashMap<String, Symbol>,
+    Module {
+        symbols: HashMap<String, Symbol>,
     },
 }
 
@@ -71,47 +71,47 @@ impl Resolver {
 
     fn collect_declarations(&mut self, ast: &Ast) {
         match ast {
-            Ast::Модуль { имя, объявления, .. } => {
-                self.current_module.push(имя.clone());
+            Ast::Module { name, declarations, .. } => {
+                self.current_module.push(name.clone());
                 let mut module_syms = HashMap::new();
 
-                for decl in объявления {
+                for decl in declarations {
                     match decl {
-                        Ast::ОбъявлениеФункции {
-                            имя, параметры_типа, параметры, возвращаемый_тип, открыто, ..
+                        Ast::FnDecl {
+                            name, type_params, params, return_type, public, ..
                         } => {
-                            module_syms.insert(имя.clone(), Symbol {
-                                kind: SymbolKind::Функция {
-                                    параметры_типа: параметры_типа.clone(),
-                                    параметры: параметры.clone(),
-                                    возвращаемый_тип: возвращаемый_тип.clone(),
+                            module_syms.insert(name.clone(), Symbol {
+                                kind: SymbolKind::Fn {
+                                    type_params: type_params.clone(),
+                                    params: params.clone(),
+                                    return_type: return_type.clone(),
                                 },
                                 span: Span { line: 1, column: 1, offset: 0 },
-                                публичный: *открыто,
+                                public: *public,
                             });
                         }
-                        Ast::ОбъявлениеСтруктуры { имя, поля, открыто, .. } => {
-                            module_syms.insert(имя.clone(), Symbol {
-                                kind: SymbolKind::Структура { поля: поля.clone() },
+                        Ast::StructDecl { name, fields, public, .. } => {
+                            module_syms.insert(name.clone(), Symbol {
+                                kind: SymbolKind::Struct { fields: fields.clone() },
                                 span: Span { line: 1, column: 1, offset: 0 },
-                                публичный: *открыто,
+                                public: *public,
                             });
                         }
-                        Ast::ОбъявлениеСуммы { имя, варианты, открыто, .. } => {
-                            module_syms.insert(имя.clone(), Symbol {
-                                kind: SymbolKind::Сумма {
-                                    варианты: варианты.iter().map(|v| (v.имя.clone(), v.тип_данных.clone())).collect()
+                        Ast::SumDecl { name, variants, public, .. } => {
+                            module_syms.insert(name.clone(), Symbol {
+                                kind: SymbolKind::Sum {
+                                    variants: variants.iter().map(|v| (v.name.clone(), v.data_type.clone())).collect()
                                 },
                                 span: Span { line: 1, column: 1, offset: 0 },
-                                публичный: *открыто,
+                                public: *public,
                             });
-                            for вариант in варианты {
-                                module_syms.insert(вариант.имя.clone(), Symbol {
-                                    kind: SymbolKind::Сумма {
-                                        варианты: vec![(вариант.имя.clone(), вариант.тип_данных.clone())]
+                            for variant in variants {
+                                module_syms.insert(variant.name.clone(), Symbol {
+                                    kind: SymbolKind::Sum {
+                                        variants: vec![(variant.name.clone(), variant.data_type.clone())]
                                     },
                                     span: Span { line: 1, column: 1, offset: 0 },
-                                    публичный: *открыто,
+                                    public: *public,
                                 });
                             }
                         }
@@ -121,9 +121,9 @@ impl Resolver {
 
                 let module_name = self.current_module.join(".");
                 self.symbols.module_symbols.insert(module_name, Symbol {
-                    kind: SymbolKind::Модуль { символы: module_syms },
+                    kind: SymbolKind::Module { symbols: module_syms },
                     span: Span { line: 1, column: 1, offset: 0 },
-                    публичный: true,
+                    public: true,
                 });
 
                 self.current_module.pop();
@@ -134,68 +134,88 @@ impl Resolver {
 
     fn resolve_node(&mut self, node: &Ast) -> Option<Ast> {
         match node {
-            Ast::Модуль { имя, объявления, span } => {
-                let resolved_decls: Vec<Ast> = объявления.iter().filter_map(|d| self.resolve_node(d)).collect();
-                Some(Ast::Модуль { имя: имя.clone(), объявления: resolved_decls, span: *span })
+            Ast::Module { name, declarations, span } => {
+                let resolved_decls: Vec<Ast> = declarations.iter().filter_map(|d| self.resolve_node(d)).collect();
+                Some(Ast::Module { name: name.clone(), declarations: resolved_decls, span: *span })
             }
 
-            Ast::ОбъявлениеФункции { имя, параметры_типа, параметры, возвращаемый_тип, тело, открыто, span } => {
+            Ast::FnDecl { name, type_params, params, return_type, body, public, span } => {
                 self.push_scope();
-                for param in параметры {
-                    self.add_symbol(&param.имя, Symbol {
-                        kind: SymbolKind::Переменная { тип: Some(param.тип.clone()), изменяемая: param.изменяемый },
-                        span: *span, публичный: false,
+                for param in params {
+                    self.add_symbol(&param.name, Symbol {
+                        kind: SymbolKind::Variable {
+                            llvm_type: Some(param.llvm_type.clone()),
+                            mutable: param.mutable,
+                        },
+                        span: *span,
+                        public: false,
                     });
                 }
-                let resolved_body = self.resolve_node(тело)?;
+                let resolved_body = self.resolve_node(body)?;
                 self.pop_scope();
-                Some(Ast::ОбъявлениеФункции {
-                    имя: имя.clone(), параметры_типа: параметры_типа.clone(),
-                    параметры: параметры.clone(), возвращаемый_тип: возвращаемый_тип.clone(),
-                    тело: Box::new(resolved_body), открыто: *открыто, span: *span,
+                Some(Ast::FnDecl {
+                    name: name.clone(),
+                    type_params: type_params.clone(),
+                    params: params.clone(),
+                    return_type: return_type.clone(),
+                    body: Box::new(resolved_body),
+                    public: *public,
+                    span: *span,
                 })
             }
 
-            Ast::Блок { выражения, span } => {
+            Ast::Block { expressions, span } => {
                 self.push_scope();
-                let exprs: Vec<Ast> = выражения.iter().filter_map(|e| self.resolve_node(e)).collect();
+                let exprs: Vec<Ast> = expressions.iter().filter_map(|e| self.resolve_node(e)).collect();
                 self.pop_scope();
-                Some(Ast::Блок { выражения: exprs, span: *span })
+                Some(Ast::Block { expressions: exprs, span: *span })
             }
 
-            Ast::Присваивание { имя, тип_аннотация, изменяемая, значение, span } => {
-                let resolved_value = self.resolve_node(значение)?;
-                self.add_symbol(имя, Symbol {
-                    kind: SymbolKind::Переменная { тип: тип_аннотация.clone(), изменяемая: *изменяемая },
-                    span: *span, публичный: false,
+            Ast::Assign { name, type_annotation, mutable, value, span } => {
+                let resolved_value = self.resolve_node(value)?;
+                self.add_symbol(name, Symbol {
+                    kind: SymbolKind::Variable {
+                        llvm_type: type_annotation.clone(),
+                        mutable: *mutable,
+                    },
+                    span: *span,
+                    public: false,
                 });
-                Some(Ast::Присваивание {
-                    имя: имя.clone(), тип_аннотация: тип_аннотация.clone(),
-                    изменяемая: *изменяемая, значение: Box::new(resolved_value), span: *span,
+                Some(Ast::Assign {
+                    name: name.clone(),
+                    type_annotation: type_annotation.clone(),
+                    mutable: *mutable,
+                    value: Box::new(resolved_value),
+                    span: *span,
                 })
             }
 
-            Ast::Переменная { имя, тип, span } => {
-                if self.lookup_symbol(имя).is_none() {
-                    self.error(&format!("Неизвестное имя: '{}'", имя), *span);
+            Ast::Variable { name, llvm_type, span } => {
+                if self.lookup_symbol(name).is_none() {
+                    self.error(&format!("Unknown name: '{}'", name), *span);
                 }
-                Some(Ast::Переменная { имя: имя.clone(), тип: тип.clone(), span: *span })
+                Some(Ast::Variable { name: name.clone(), llvm_type: llvm_type.clone(), span: *span })
             }
 
-            Ast::Сопоставление { значение, ветки, тип, span } => {
-                let val = self.resolve_node(значение)?;
-                let resolved_branches: Vec<ВеткаСопоставления> = ветки.iter().filter_map(|b| {
+            Ast::Match { value, arms, llvm_type, span } => {
+                let val = self.resolve_node(value)?;
+                let resolved_branches: Vec<MatchArm> = arms.iter().filter_map(|b| {
                     self.push_scope();
-                    self.add_pattern_vars(&b.образец);
-                    let body = self.resolve_node(&b.тело);
+                    self.add_pattern_vars(&b.pattern);
+                    let body = self.resolve_node(&b.body);
                     self.pop_scope();
-                    body.map(|resolved_body| ВеткаСопоставления {
-                        образец: b.образец.clone(),
-                        условие: b.условие.clone(),
-                        тело: Box::new(resolved_body),
+                    body.map(|resolved_body| MatchArm {
+                        pattern: b.pattern.clone(),
+                        condition: b.condition.clone(),
+                        body: Box::new(resolved_body),
                     })
                 }).collect();
-                Some(Ast::Сопоставление { значение: Box::new(val), ветки: resolved_branches, тип: тип.clone(), span: *span })
+                Some(Ast::Match {
+                    value: Box::new(val),
+                    arms: resolved_branches,
+                    llvm_type: llvm_type.clone(),
+                    span: *span,
+                })
             }
 
             _ => Some(node.clone()),
@@ -225,22 +245,22 @@ impl Resolver {
         self.symbols.module_symbols.get(name)
     }
 
-    fn add_pattern_vars(&mut self, pattern: &Образец) {
+    fn add_pattern_vars(&mut self, pattern: &Pattern) {
         match pattern {
-            Образец::Переменная(name) => {
+            Pattern::Variable(name) => {
                 self.add_symbol(name, Symbol {
-                    kind: SymbolKind::Переменная { тип: None, изменяемая: false },
+                    kind: SymbolKind::Variable { llvm_type: None, mutable: false },
                     span: Span { line: 1, column: 1, offset: 0 },
-                    публичный: false,
+                    public: false,
                 });
             }
-            Образец::Конструктор { вложенный, .. } => {
-                if let Some(inner) = вложенный {
+            Pattern::Constructor { nested, .. } => {
+                if let Some(inner) = nested {
                     self.add_pattern_vars(inner);
                 }
             }
-            Образец::Кортеж(элементы) | Образец::Список { элементы: элементы, .. } => {
-                for elem in элементы {
+            Pattern::Tuple(elements) | Pattern::List { elements, .. } => {
+                for elem in elements {
                     self.add_pattern_vars(elem);
                 }
             }
@@ -250,7 +270,7 @@ impl Resolver {
 
     fn error(&mut self, message: &str, span: Span) {
         self.errors.push(Diagnostic {
-            kind: DiagnosticKind::Ошибка,
+            kind: DiagnosticKind::Error,
             message: message.to_string(),
             span,
             hint: None,

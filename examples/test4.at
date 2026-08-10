@@ -1,0 +1,3 @@
+funkcja glavnaja():
+    pust a = 10
+    napisat(a)
