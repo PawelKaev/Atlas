@@ -397,6 +397,13 @@ impl BorrowChecker {
                     self.check_node(arg);
                 }
             }
+            Ast::EncodeBinding { schema, form, .. } => {
+                self.check_node(schema);
+                self.check_node(form);
+            }
+            Ast::DecodeBinding { symbol, .. } => {
+                self.check_node(symbol);
+            }
             Ast::ReflexiveCascade { subject, context, .. } => {
                 self.check_node(subject);
                 self.check_node(context);

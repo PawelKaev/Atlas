@@ -125,7 +125,19 @@ impl Lexer {
                     }
                 }
                 '<' => {
-                    if self.peek_next() == '<' && self.peek_n(2) == 'e' && self.peek_n(3) == 'x' 
+                    if self.peek_next() == '<' && self.peek_n(2) == 'e' && self.peek_n(3) == 'n' 
+                        && self.peek_n(4) == 'c' && self.peek_n(5) == 'o' && self.peek_n(6) == 'd' 
+                        && self.peek_n(7) == 'e' && self.peek_n(8) == '>' && self.peek_n(9) == '>' {
+                        // <<encode>>
+                        for _ in 0..10 { self.advance(); }
+                        self.push_token(TokenKind::EncodeOp, "<<encode>>");
+                    } else if self.peek_next() == '<' && self.peek_n(2) == 'd' && self.peek_n(3) == 'e' 
+                        && self.peek_n(4) == 'c' && self.peek_n(5) == 'o' && self.peek_n(6) == 'd' 
+                        && self.peek_n(7) == 'e' && self.peek_n(8) == '>' && self.peek_n(9) == '>' {
+                        // <<decode>>
+                        for _ in 0..10 { self.advance(); }
+                        self.push_token(TokenKind::DecodeOp, "<<decode>>");
+                    } else if self.peek_next() == '<' && self.peek_n(2) == 'e' && self.peek_n(3) == 'x' 
                         && self.peek_n(4) == 'e' && self.peek_n(5) == 'c' && self.peek_n(6) == 'u' 
                         && self.peek_n(7) == 't' && self.peek_n(8) == 'e' && self.peek_n(9) == '>' 
                         && self.peek_n(10) == '>' {

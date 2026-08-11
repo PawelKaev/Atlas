@@ -91,6 +91,8 @@ pub enum TokenKind {
     ColonColonColon,  // :::
     AufhebenOp,       // <<+>>
     ExecuteOp,        // <<execute>>
+    EncodeOp,         // <<encode>>
+    DecodeOp,         // <<decode>>
     AporeticOp,       // ~:~
     Comma,       // ,
     Semicolon,   // ;

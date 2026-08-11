@@ -151,6 +151,22 @@ impl Desugarer {
                     source_span: Span { line: 1, column: 1, offset: 0 },
                 })
             }
+            CstNode::EncodeBinding { schema, form } => {
+                let s = self.desugar_node(schema)?;
+                let f = self.desugar_node(form)?;
+                Some(Ast::EncodeBinding {
+                    schema: Box::new(s),
+                    form: Box::new(f),
+                    source_span: Span { line: 1, column: 1, offset: 0 },
+                })
+            }
+            CstNode::DecodeBinding { symbol } => {
+                let s = self.desugar_node(symbol)?;
+                Some(Ast::DecodeBinding {
+                    symbol: Box::new(s),
+                    source_span: Span { line: 1, column: 1, offset: 0 },
+                })
+            }
 
             CstNode::ReflexiveCascade { subject, ethics_override, context } => {
                 let subj = self.desugar_node(subject)?;

@@ -107,6 +107,15 @@ pub enum Ast {
         arguments: Vec<Ast>,
         source_span: Span,
     },
+    EncodeBinding {
+        schema: Box<Ast>,
+        form: Box<Ast>,
+        source_span: Span,
+    },
+    DecodeBinding {
+        symbol: Box<Ast>,
+        source_span: Span,
+    },
 
     ReflexiveCascade {
         subject: Box<Ast>,
@@ -282,6 +291,8 @@ impl Ast {
             Ast::AporeticBinding { source_span, .. } => source_span,
             Ast::AufhebenBinding { source_span, .. } => source_span,
             Ast::ExecuteBinding { source_span, .. } => source_span,
+            Ast::EncodeBinding { source_span, .. } => source_span,
+            Ast::DecodeBinding { source_span, .. } => source_span,
             Ast::ReflexiveCascade { source_span, .. } => source_span,
             Ast::Block { span, .. } => span,
             Ast::Assign { span, .. } => span,
@@ -314,6 +325,8 @@ impl Ast {
             Ast::AporeticBinding { .. } |
             Ast::AufhebenBinding { .. } |
             Ast::ExecuteBinding { .. } |
+            Ast::EncodeBinding { .. } |
+            Ast::DecodeBinding { .. } |
             Ast::Literal { .. } |
             Ast::Variable { .. } |
             Ast::BinExpr { .. } |

@@ -16,6 +16,8 @@ pub enum CstNode {
     ReflexiveCascade { subject: Box<CstNode>, ethics_override: Option<String>, context: Box<CstNode> },
     AufhebenBinding { left: Box<CstNode>, right: Box<CstNode> },
     ExecuteBinding { schema: Box<CstNode>, args: Vec<CstNode> },
+    EncodeBinding { schema: Box<CstNode>, form: Box<CstNode> },
+    DecodeBinding { symbol: Box<CstNode> },
     AporeticBinding { left: Box<CstNode>, right: Box<CstNode> },
     FieldAccess { object: Box<CstNode>, field: String },
     Match { value: Box<CstNode>, arms: Vec<Arm> },
@@ -313,6 +315,20 @@ impl Parser {
             return Some(CstNode::ExecuteBinding {
                 schema: Box::new(left),
                 args,
+            });
+        }
+        // EncodeBinding: schema <<encode>> form
+        if self.eat(&TokenKind::EncodeOp) {
+            let form = self.parse_expression()?;
+            return Some(CstNode::EncodeBinding {
+                schema: Box::new(left),
+                form: Box::new(form),
+            });
+        }
+        // DecodeBinding: symbol <<decode>>
+        if self.eat(&TokenKind::DecodeOp) {
+            return Some(CstNode::DecodeBinding {
+                symbol: Box::new(left),
             });
         }
         
