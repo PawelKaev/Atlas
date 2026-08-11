@@ -89,6 +89,9 @@ pub enum TokenKind {
     Dot,         // .
     Colon,       // :
     ColonColonColon,  // :::
+    AufhebenOp,       // <<+>>
+    ExecuteOp,        // <<execute>>
+    AporeticOp,       // ~:~
     Comma,       // ,
     Semicolon,   // ;
     DotDot,      // ..

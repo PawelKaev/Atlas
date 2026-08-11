@@ -383,6 +383,20 @@ impl BorrowChecker {
             Ast::ImportDecl { .. } => {}
             Ast::ExternFnDecl { .. } => {}
             Ast::StructDecl { .. } => {}
+            Ast::AporeticBinding { left, right, .. } => {
+                self.check_node(left);
+                self.check_node(right);
+            }
+            Ast::AufhebenBinding { left, right, .. } => {
+                self.check_node(left);
+                self.check_node(right);
+            }
+            Ast::ExecuteBinding { schema, arguments, .. } => {
+                self.check_node(schema);
+                for arg in arguments {
+                    self.check_node(arg);
+                }
+            }
             Ast::ReflexiveCascade { subject, context, .. } => {
                 self.check_node(subject);
                 self.check_node(context);

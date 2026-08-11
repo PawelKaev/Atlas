@@ -124,6 +124,33 @@ impl Desugarer {
                     }
                 }
             }
+            CstNode::AporeticBinding { left, right } => {
+                let l = self.desugar_node(left)?;
+                let r = self.desugar_node(right)?;
+                Some(Ast::AporeticBinding {
+                    left: Box::new(l),
+                    right: Box::new(r),
+                    source_span: Span { line: 1, column: 1, offset: 0 },
+                })
+            }
+            CstNode::AufhebenBinding { left, right } => {
+                let l = self.desugar_node(left)?;
+                let r = self.desugar_node(right)?;
+                Some(Ast::AufhebenBinding {
+                    left: Box::new(l),
+                    right: Box::new(r),
+                    source_span: Span { line: 1, column: 1, offset: 0 },
+                })
+            }
+            CstNode::ExecuteBinding { schema, args } => {
+                let s = self.desugar_node(schema)?;
+                let a: Vec<Ast> = args.iter().filter_map(|arg| self.desugar_node(arg)).collect();
+                Some(Ast::ExecuteBinding {
+                    schema: Box::new(s),
+                    arguments: a,
+                    source_span: Span { line: 1, column: 1, offset: 0 },
+                })
+            }
 
             CstNode::ReflexiveCascade { subject, ethics_override, context } => {
                 let subj = self.desugar_node(subject)?;

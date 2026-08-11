@@ -37,6 +37,10 @@ impl OntoState {
     }
 }
 
+/// Unique identifier for a voice in the polyphonic field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct VoiceId(pub usize);
+
 /// Hierarchical ontological space — a tree of named subspaces.
 ///
 /// Each space has:
@@ -219,4 +223,74 @@ impl OntoSpace {
             subspace.update_state_parts(tail, state);
         }
     }
+}
+
+// ============ Operational Theory of the Ideal (Pivovarov) ============
+
+/// Unique identifier for an operation schema.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SchemaId(pub usize);
+
+/// Unique identifier for an act node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ActId(pub usize);
+
+/// Unique identifier for a symbolic node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SymbolId(pub usize);
+
+/// A step within an operation schema.
+#[derive(Debug, Clone)]
+pub struct SchemaStep {
+    pub action: String,
+    pub role: SchemaRole,
+    pub precondition: Option<String>,
+    pub postcondition: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SchemaRole {
+    Subject,
+    Object,
+    Tool,
+    Mediator,
+}
+
+/// An operational schema of activity — the ideal as an executable invariant.
+#[derive(Debug, Clone)]
+pub struct OperationSchema {
+    pub id: SchemaId,
+    pub name: String,
+    pub steps: Vec<SchemaStep>,
+    pub invariant: String,
+    pub symbol: Option<String>,
+    pub owner: VoiceId,
+}
+
+/// A concrete act, produced by applying <<execute>> to a schema.
+#[derive(Debug, Clone)]
+pub struct ActNode {
+    pub id: ActId,
+    pub schema: SchemaId,
+    pub subject: VoiceId,
+    pub object: String,
+    pub tool: String,
+    pub result: ActResult,
+    pub timestamp: u64,
+}
+
+#[derive(Debug, Clone)]
+pub enum ActResult {
+    Success,
+    Failure(String),
+    Contradiction(SchemaId),
+}
+
+/// A sign in which a schema of activity is encoded.
+#[derive(Debug, Clone)]
+pub struct SymbolicNode {
+    pub id: SymbolId,
+    pub schema: SchemaId,
+    pub form: String,
+    pub encoded_by: VoiceId,
 }

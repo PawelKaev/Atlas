@@ -14,6 +14,9 @@ pub enum CstNode {
     Call { function: Box<CstNode>, arguments: Vec<CstNode> },
     Pipeline { left: Box<CstNode>, right: Box<CstNode> },
     ReflexiveCascade { subject: Box<CstNode>, ethics_override: Option<String>, context: Box<CstNode> },
+    AufhebenBinding { left: Box<CstNode>, right: Box<CstNode> },
+    ExecuteBinding { schema: Box<CstNode>, args: Vec<CstNode> },
+    AporeticBinding { left: Box<CstNode>, right: Box<CstNode> },
     FieldAccess { object: Box<CstNode>, field: String },
     Match { value: Box<CstNode>, arms: Vec<Arm> },
     Arm { pattern: Box<CstNode>, condition: Option<Box<CstNode>>, body: Box<CstNode> },
@@ -283,6 +286,36 @@ impl Parser {
 
     fn parse_reflexive(&mut self) -> Option<CstNode> {
         let left = self.parse_or()?;
+        
+        // AporeticBinding: left ~::~ right
+        if self.eat(&TokenKind::AporeticOp) {
+            let right = self.parse_reflexive()?;
+            return Some(CstNode::AporeticBinding {
+                left: Box::new(left),
+                right: Box::new(right),
+            });
+        }
+        // AufhebenBinding: left <<+>> right
+        if self.eat(&TokenKind::AufhebenOp) {
+            let right = self.parse_reflexive()?;
+            return Some(CstNode::AufhebenBinding {
+                left: Box::new(left),
+                right: Box::new(right),
+            });
+        }
+         // ExecuteBinding: schema <<execute>> (args)
+        if self.eat(&TokenKind::ExecuteOp) {
+            let args = if self.check(&TokenKind::LParen) {
+                self.parse_arguments()?
+            } else {
+                Vec::new()
+            };
+            return Some(CstNode::ExecuteBinding {
+                schema: Box::new(left),
+                args,
+            });
+        }
+        
         if self.eat(&TokenKind::ColonColonColon) {
             // Check for ethics override: Identifier ::: EthicsName ::: context
             let ethics_override = self.try_parse_ethics_override();

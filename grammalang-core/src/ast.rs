@@ -92,7 +92,22 @@ pub enum Ast {
         llvm_type: Option<Type>,
         span: Span,
     },
-    
+    AporeticBinding {
+        left: Box<Ast>,
+        right: Box<Ast>,
+        source_span: Span,
+    },
+    AufhebenBinding {
+        left: Box<Ast>,
+        right: Box<Ast>,
+        source_span: Span,
+    },
+    ExecuteBinding {
+        schema: Box<Ast>,
+        arguments: Vec<Ast>,
+        source_span: Span,
+    },
+
     ReflexiveCascade {
         subject: Box<Ast>,
         ethics_override: Option<EthicalSystem>,
@@ -264,6 +279,9 @@ impl Ast {
             Ast::OpAssign { span, .. } => span,
             Ast::PatternAssign { span, .. } => span,
             Ast::StructUpdate { span, .. } => span,
+            Ast::AporeticBinding { source_span, .. } => source_span,
+            Ast::AufhebenBinding { source_span, .. } => source_span,
+            Ast::ExecuteBinding { source_span, .. } => source_span,
             Ast::ReflexiveCascade { source_span, .. } => source_span,
             Ast::Block { span, .. } => span,
             Ast::Assign { span, .. } => span,
@@ -293,6 +311,9 @@ impl Ast {
     
     pub fn is_expression(&self) -> bool {
         matches!(self,
+            Ast::AporeticBinding { .. } |
+            Ast::AufhebenBinding { .. } |
+            Ast::ExecuteBinding { .. } |
             Ast::Literal { .. } |
             Ast::Variable { .. } |
             Ast::BinExpr { .. } |

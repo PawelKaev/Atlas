@@ -125,7 +125,18 @@ impl Lexer {
                     }
                 }
                 '<' => {
-                    if self.peek_next() == '=' {
+                    if self.peek_next() == '<' && self.peek_n(2) == 'e' && self.peek_n(3) == 'x' 
+                        && self.peek_n(4) == 'e' && self.peek_n(5) == 'c' && self.peek_n(6) == 'u' 
+                        && self.peek_n(7) == 't' && self.peek_n(8) == 'e' && self.peek_n(9) == '>' 
+                        && self.peek_n(10) == '>' {
+                        // <<execute>>
+                        for _ in 0..11 { self.advance(); }
+                        self.push_token(TokenKind::ExecuteOp, "<<execute>>");
+                    } else if self.peek_next() == '<' && self.peek_n(2) == '+' && self.peek_n(3) == '>' && self.peek_n(4) == '>' {
+                        // <<+>>
+                        for _ in 0..5 { self.advance(); }
+                        self.push_token(TokenKind::AufhebenOp, "<<+>>");
+                    } else if self.peek_next() == '=' {
                         self.double_token(TokenKind::Le)
                     } else if self.peek_next() == '<' {
                         if self.peek_n(2) == '=' {
@@ -137,19 +148,7 @@ impl Lexer {
                         self.single_token(TokenKind::Lt)
                     }
                 }
-                '>' => {
-                    if self.peek_next() == '=' {
-                        self.double_token(TokenKind::Ge)
-                    } else if self.peek_next() == '>' {
-                        if self.peek_n(2) == '=' {
-                            self.triple_token(TokenKind::ShrEq)
-                        } else {
-                            self.double_token(TokenKind::Shr)
-                        }
-                    } else {
-                        self.single_token(TokenKind::Gt)
-                    }
-                }
+                
                 '-' => {
                     if self.peek_next() == '>' {
                         self.double_token(TokenKind::Arrow)
@@ -186,6 +185,27 @@ impl Lexer {
                         self.double_token(TokenKind::DotDot)
                     } else {
                         self.single_token(TokenKind::Dot)
+                    }
+                }
+                '~' => {
+                    if self.peek_next() == ':' && self.peek_n(2) == '~' {
+                        self.triple_token(TokenKind::AporeticOp)
+                    } else {
+                        self.error(&format!("Unexpected character: '{}'", c));
+                        self.advance();
+                    }
+                }
+                '>' => {
+                    if self.peek_next() == '=' {
+                        self.double_token(TokenKind::Ge)
+                    } else if self.peek_next() == '>' {
+                        if self.peek_n(2) == '=' {
+                            self.triple_token(TokenKind::ShrEq)
+                        } else {
+                            self.double_token(TokenKind::Shr)
+                        }
+                    } else {
+                        self.single_token(TokenKind::Gt)
                     }
                 }
                 '_' => self.single_token(TokenKind::Underscore),
