@@ -18,6 +18,8 @@ pub enum CstNode {
     ExecuteBinding { schema: Box<CstNode>, args: Vec<CstNode> },
     EncodeBinding { schema: Box<CstNode>, form: Box<CstNode> },
     DecodeBinding { symbol: Box<CstNode> },
+    PraxisBinding { synthesis: Box<CstNode>, context: Box<CstNode> },
+    RevolutionBinding { old_field: Box<CstNode>, new_quality: Box<CstNode> },
     AporeticBinding { left: Box<CstNode>, right: Box<CstNode> },
     FieldAccess { object: Box<CstNode>, field: String },
     Match { value: Box<CstNode>, arms: Vec<Arm> },
@@ -303,6 +305,22 @@ impl Parser {
             return Some(CstNode::AufhebenBinding {
                 left: Box::new(left),
                 right: Box::new(right),
+            });
+        }
+        // PraxisBinding: synthesis <<praxis>> context
+        if self.eat(&TokenKind::PraxisOp) {
+            let context = self.parse_expression()?;
+            return Some(CstNode::PraxisBinding {
+                synthesis: Box::new(left),
+                context: Box::new(context),
+            });
+        }
+        // RevolutionBinding: old_field <<revolution>> new_quality
+        if self.eat(&TokenKind::RevolutionOp) {
+            let new_quality = self.parse_expression()?;
+            return Some(CstNode::RevolutionBinding {
+                old_field: Box::new(left),
+                new_quality: Box::new(new_quality),
             });
         }
          // ExecuteBinding: schema <<execute>> (args)

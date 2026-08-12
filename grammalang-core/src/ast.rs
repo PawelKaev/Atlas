@@ -116,6 +116,16 @@ pub enum Ast {
         symbol: Box<Ast>,
         source_span: Span,
     },
+    PraxisBinding {
+        synthesis: Box<Ast>,
+        context: Box<Ast>,
+        source_span: Span,
+    },
+    RevolutionBinding {
+        old_field: Box<Ast>,
+        new_quality: Box<Ast>,
+        source_span: Span,
+    },
 
     ReflexiveCascade {
         subject: Box<Ast>,
@@ -293,6 +303,8 @@ impl Ast {
             Ast::ExecuteBinding { source_span, .. } => source_span,
             Ast::EncodeBinding { source_span, .. } => source_span,
             Ast::DecodeBinding { source_span, .. } => source_span,
+            Ast::PraxisBinding { source_span, .. } => source_span,
+            Ast::RevolutionBinding { source_span, .. } => source_span,
             Ast::ReflexiveCascade { source_span, .. } => source_span,
             Ast::Block { span, .. } => span,
             Ast::Assign { span, .. } => span,
@@ -327,6 +339,8 @@ impl Ast {
             Ast::ExecuteBinding { .. } |
             Ast::EncodeBinding { .. } |
             Ast::DecodeBinding { .. } |
+            Ast::PraxisBinding { .. } |
+            Ast::RevolutionBinding { .. } |
             Ast::Literal { .. } |
             Ast::Variable { .. } |
             Ast::BinExpr { .. } |

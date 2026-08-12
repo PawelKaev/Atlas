@@ -167,6 +167,24 @@ impl Desugarer {
                     source_span: Span { line: 1, column: 1, offset: 0 },
                 })
             }
+            CstNode::PraxisBinding { synthesis, context } => {
+                let s = self.desugar_node(synthesis)?;
+                let c = self.desugar_node(context)?;
+                Some(Ast::PraxisBinding {
+                    synthesis: Box::new(s),
+                    context: Box::new(c),
+                    source_span: Span { line: 1, column: 1, offset: 0 },
+                })
+            }
+            CstNode::RevolutionBinding { old_field, new_quality } => {
+                let old = self.desugar_node(old_field)?;
+                let new_q = self.desugar_node(new_quality)?;
+                Some(Ast::RevolutionBinding {
+                    old_field: Box::new(old),
+                    new_quality: Box::new(new_q),
+                    source_span: Span { line: 1, column: 1, offset: 0 },
+                })
+            }
 
             CstNode::ReflexiveCascade { subject, ethics_override, context } => {
                 let subj = self.desugar_node(subject)?;

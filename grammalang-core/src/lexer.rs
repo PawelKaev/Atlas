@@ -130,6 +130,20 @@ impl Lexer {
                         && self.peek_n(7) == 'e' && self.peek_n(8) == '>' && self.peek_n(9) == '>' {
                         // <<encode>>
                         for _ in 0..10 { self.advance(); }
+                    } else if self.peek_next() == '<' && self.peek_n(2) == 'p' && self.peek_n(3) == 'r' 
+                        && self.peek_n(4) == 'a' && self.peek_n(5) == 'x' && self.peek_n(6) == 'i' 
+                        && self.peek_n(7) == 's' && self.peek_n(8) == '>' && self.peek_n(9) == '>' {
+                     } else if self.peek_next() == '<' && self.peek_n(2) == 'r' && self.peek_n(3) == 'e' 
+                        && self.peek_n(4) == 'v' && self.peek_n(5) == 'o' && self.peek_n(6) == 'l' 
+                        && self.peek_n(7) == 'u' && self.peek_n(8) == 't' && self.peek_n(9) == 'i' 
+                        && self.peek_n(10) == 'o' && self.peek_n(11) == 'n' && self.peek_n(12) == '>' 
+                        && self.peek_n(13) == '>' {
+                        // <<revolution>>
+                        for _ in 0..14 { self.advance(); }
+                        self.push_token(TokenKind::RevolutionOp, "<<revolution>>");   
+                            // <<praxis>>
+                        for _ in 0..10 { self.advance(); }
+                        self.push_token(TokenKind::PraxisOp, "<<praxis>>");
                         self.push_token(TokenKind::EncodeOp, "<<encode>>");
                     } else if self.peek_next() == '<' && self.peek_n(2) == 'd' && self.peek_n(3) == 'e' 
                         && self.peek_n(4) == 'c' && self.peek_n(5) == 'o' && self.peek_n(6) == 'd' 

@@ -93,6 +93,8 @@ pub enum TokenKind {
     ExecuteOp,        // <<execute>>
     EncodeOp,         // <<encode>>
     DecodeOp,         // <<decode>>
+    PraxisOp,         // <<praxis>>
+    RevolutionOp,      // <<revolution>>
     AporeticOp,       // ~:~
     Comma,       // ,
     Semicolon,   // ;

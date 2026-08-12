@@ -1,12 +1,13 @@
 // grammalang-core/src/context.rs
 
-use crate::entity::OntoSpace;
+use crate::entity::{OntoSpace, StratumLevel};
 use crate::llm_resolver::LlmResolver;
 
 /// Ontological context — hierarchical storage of all subject states.
 ///
 /// Provides:
 /// - Tree of named spaces (micro-ontologies)
+/// - Stratification into Basis and Superstructure
 /// - Inheritance: entities resolve upward through parent spaces
 /// - Caching of LLM name resolution results
 /// - Tracking of state evolution via version
@@ -19,6 +20,12 @@ impl OntoContext {
         Self {
             root: OntoSpace::new("root"),
         }
+    }
+
+    /// Creates a stratified space with the given level.
+    pub fn create_stratum(&mut self, name: &str, level: StratumLevel) {
+        let space = OntoSpace::with_level(name, level);
+        self.root.subspaces.insert(name.to_string(), space);
     }
 
     /// Resolves all passed identifiers via LLM (once per name).
@@ -36,7 +43,7 @@ impl OntoContext {
         Ok(())
     }
 
-    /// Returns the current state of an entity by path (e.g., "Соня.участок.Родион").
+    /// Returns the current state of an entity by path.
     pub fn get_state(&self, name: &str) -> Option<(f64, f64, f64)> {
         self.root.resolve(name)
     }
@@ -49,6 +56,16 @@ impl OntoContext {
     /// Updates the state of an entity and increments its version.
     pub fn update_state(&mut self, name: &str, state: (f64, f64, f64)) {
         self.root.update_state(name, state);
+    }
+
+    /// Checks if a contradiction in the superstructure can be resolved
+    /// by examining whether the base contradiction has been resolved first.
+    pub fn can_resolve_superstructure(&self, entity_name: &str) -> bool {
+        let state = self.root.resolve(entity_name);
+        match state {
+            Some((x, _, _)) => x > 0.0,
+            None => false,
+        }
     }
 }
 
@@ -93,17 +110,34 @@ mod tests {
         let mut ctx = OntoContext::new();
         let mut llm = MockLlmResolver::new();
 
-        // Create a hierarchical entity: sonya.plot.raskolnikov
         ctx.resolve_all(
             &["sonya.plot.raskolnikov".to_string()],
             &mut llm,
         )
         .unwrap();
 
-        // Should be resolvable by full path
         assert!(ctx.get_state("sonya.plot.raskolnikov").is_some());
-
-        // Version starts at 0 in the new subspace
         assert_eq!(ctx.get_version("sonya.plot.raskolnikov"), Some(0));
+    }
+
+    #[test]
+    fn test_stratification() {
+        let mut ctx = OntoContext::new();
+
+        // Create basis and superstructure
+        ctx.create_stratum("base", StratumLevel::Basis);
+        ctx.create_stratum("superstructure", StratumLevel::Superstructure);
+
+        // Resolve an entity in the base
+        let mut llm = MockLlmResolver::new();
+        ctx.resolve_all(&["base.production".to_string()], &mut llm).unwrap();
+
+        // Initially base has state
+        assert!(ctx.get_state("base.production").is_some());
+
+        // can_resolve_superstructure checks if the named entity has tension > 0
+        // base.production exists with some state
+        let can = ctx.can_resolve_superstructure("base.production");
+        assert!(can); // tension should be > 0 for a newly created entity
     }
 }

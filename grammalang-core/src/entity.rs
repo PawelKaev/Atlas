@@ -41,18 +41,31 @@ impl OntoState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct VoiceId(pub usize);
 
+/// Stratification level of an ontological space (Marxist historical materialism).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StratumLevel {
+    /// Economic base: production relations, material conditions
+    Basis,
+    /// Superstructure: politics, law, philosophy, religion
+    Superstructure,
+    /// Undifferentiated (default for backward compatibility)
+    Undifferentiated,
+}
+
 /// Hierarchical ontological space — a tree of named subspaces.
 ///
 /// Each space has:
 /// - `entities`: entities directly defined in this space
 /// - `subspaces`: child spaces (e.g., "участок" inside "Соня")
 /// - `states`: shared state pool for this space
+/// - `level`: stratum level (Basis, Superstructure, or Undifferentiated)
 ///
 /// Lookup traverses upward: if an entity is not found in the current space,
 /// it searches the parent space (inheritance).
 #[derive(Debug, Clone)]
 pub struct OntoSpace {
     pub name: String,
+    pub level: StratumLevel,
     pub entities: HashMap<String, OntoEntityId>,
     pub subspaces: HashMap<String, OntoSpace>,
     pub states: Vec<OntoState>,
@@ -63,6 +76,7 @@ impl OntoSpace {
     pub fn new(name: &str) -> Self {
         OntoSpace {
             name: name.to_string(),
+            level: StratumLevel::Undifferentiated,
             entities: HashMap::new(),
             subspaces: HashMap::new(),
             states: Vec::new(),
@@ -70,9 +84,21 @@ impl OntoSpace {
         }
     }
 
-    pub fn with_parent(name: &str, parent: OntoSpace) -> Self {
+    pub fn with_level(name: &str, level: StratumLevel) -> Self {
         OntoSpace {
             name: name.to_string(),
+            level,
+            entities: HashMap::new(),
+            subspaces: HashMap::new(),
+            states: Vec::new(),
+            parent: None,
+        }
+    }
+
+    pub fn with_parent(name: &str, level: StratumLevel, parent: OntoSpace) -> Self {
+        OntoSpace {
+            name: name.to_string(),
+            level,
             entities: HashMap::new(),
             subspaces: HashMap::new(),
             states: Vec::new(),
@@ -157,11 +183,12 @@ impl OntoSpace {
             return id;
         }
 
-        // Has more segments — get or create subspace
+        // Has more segments — get or create subspace, inheriting parent's level
+        let parent_level = self.level;
         let subspace = self
             .subspaces
             .entry(head.to_string())
-            .or_insert_with(|| OntoSpace::new(head));
+            .or_insert_with(|| OntoSpace::with_level(head, parent_level));
 
         subspace.resolve_or_create_parts(tail, default_state)
     }

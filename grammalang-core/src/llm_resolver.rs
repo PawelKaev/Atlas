@@ -27,6 +27,7 @@ impl LlmResolver for MockLlmResolver {
             "sonya.plot.raskolnikov" => Ok((0.8, 0.9, 0.1)),
             "sonya" => Ok((0.9, 0.3, 0.7)),
             "sonya.plot" => Ok((0.5, 0.5, 0.5)),
+            "base.production" => Ok((0.7, 0.5, 0.3)),
             "a" => Ok((0.8, 0.5, 0.3)),
             "b" => Ok((0.6, 0.4, 0.2)),
             "c" => Ok((0.9, 0.7, 0.1)),

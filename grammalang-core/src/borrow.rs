@@ -404,6 +404,14 @@ impl BorrowChecker {
             Ast::DecodeBinding { symbol, .. } => {
                 self.check_node(symbol);
             }
+            Ast::PraxisBinding { synthesis, context, .. } => {
+                self.check_node(synthesis);
+                self.check_node(context);
+            }
+            Ast::RevolutionBinding { old_field, new_quality, .. } => {
+                self.check_node(old_field);
+                self.check_node(new_quality);
+            }
             Ast::ReflexiveCascade { subject, context, .. } => {
                 self.check_node(subject);
                 self.check_node(context);
