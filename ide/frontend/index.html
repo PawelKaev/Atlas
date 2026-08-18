@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/editor.css">
     <link rel="stylesheet" href="css/integration.css">
+    <link rel="stylesheet" href="css/text_analysis.css">
 </head>
 <body>
     <div class="container">
@@ -24,12 +25,7 @@
         <main>
             <div class="panel-left">
                 <h2>Редактор</h2>
-                <textarea id="editor" placeholder="Введите код Atlas...
-                    
-Примеры:
-свобода ~::~ безопасность
-синтез ::: уровень_2
-понятие ~> Meta-понятие"></textarea>
+                <textarea id="editor" placeholder="Введите код Atlas..."></textarea>
                 <button id="run-btn">▶ Запустить</button>
                 <button id="synthesis-btn" style="background:#4CAF50;margin-top:5px;">⊕ Синтез</button>
                 <button id="contradiction-btn" style="background:#e94560;margin-top:5px;">~::~ Противоречие</button>
@@ -60,6 +56,7 @@
     <script src="js/cardio.js"></script>
     <script src="js/ws_client.js"></script>
     <script src="js/integration.js"></script>
+    <script src="js/text_analysis.js"></script>
     <script>
         wsClient.on('connected', () => {
             document.getElementById('ws-status').textContent = 'WS: подключен';

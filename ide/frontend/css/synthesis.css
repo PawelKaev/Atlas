@@ -1,0 +1,55 @@
+
+.synthesize-btn {
+    width: 100%;
+    padding: 8px;
+    margin-bottom: 5px;
+    background: #f1c40f;
+    color: #1a1a2e;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.85em;
+    font-weight: bold;
+    transition: background 0.2s;
+}
+
+.synthesize-btn:hover {
+    background: #ffd700;
+}
+
+#synthesis-results {
+    max-height: 200px;
+    overflow-y: auto;
+    margin-top: 5px;
+}
+
+#synthesis-results h4 {
+    color: #f1c40f;
+    margin-bottom: 5px;
+    font-size: 0.85em;
+}
+
+.synthesis-item {
+    padding: 8px;
+    margin-bottom: 5px;
+    background: #0f3460;
+    border-radius: 3px;
+}
+
+.synthesis-name {
+    font-weight: bold;
+    color: #f1c40f;
+    font-size: 0.85em;
+}
+
+.synthesis-detail {
+    color: #e0e0e0;
+    font-size: 0.8em;
+    margin-top: 3px;
+}
+
+.synthesis-strategy {
+    color: #999;
+    font-size: 0.75em;
+    margin-top: 3px;
+}
