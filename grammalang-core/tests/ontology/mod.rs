@@ -1,0 +1,11 @@
+pub mod target_ontology_tests;
+pub mod contradiction_tests;
+pub mod synthesis_detector_tests;
+pub mod phase1_tests;
+pub mod phase2_tests;
+pub mod phase3_tests;
+pub mod phase4_tests;
+pub mod phase5_tests;
+pub mod phase6_tests;
+pub mod phase7_tests;
+pub mod integration_test;

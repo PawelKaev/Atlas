@@ -1,0 +1,30 @@
+// src/ontology/mod.rs
+pub mod engine;
+pub mod target_ontology;
+pub mod contradiction;
+pub mod synthesis_detector;
+pub mod synthesis_strategy_selector;
+pub mod synthesis_generator;
+pub mod synthesis_generator_llm;
+pub mod synthesis_generator_diffusion;
+pub mod synthesis_generator_evolutionary;
+pub mod synthesis_integrator;
+pub mod axis_proposer;
+pub mod synthesis_validator;
+pub mod synthesis_rollback;
+pub mod integration_layer;
+
+pub use engine::*;
+pub use target_ontology::*;
+pub use contradiction::*;
+pub use synthesis_detector::*;
+pub use synthesis_strategy_selector::*;
+pub use synthesis_generator::*;
+pub use synthesis_generator_llm::*;
+pub use synthesis_generator_diffusion::*;
+pub use synthesis_generator_evolutionary::*;
+pub use synthesis_integrator::*;
+pub use axis_proposer::*;
+pub use synthesis_validator::*;
+pub use synthesis_rollback::*;
+pub use integration_layer::*;
