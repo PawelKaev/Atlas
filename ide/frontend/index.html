@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atlas IDE - Полифонические поля</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/editor.css">
+    <link rel="stylesheet" href="css/integration.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Atlas IDE</h1>
+            <div class="status-bar">
+                <span id="stability">Стабильность: 1.00</span>
+                <span id="contradiction">Противоречие: 0.00</span>
+                <span id="awareness">Самосознание: 0.00</span>
+                <span id="pulse">Пульс: 60.0</span>
+                <span id="ws-status" style="color:#f1c40f;">WS: подключение...</span>
+            </div>
+        </header>
+        
+        <main>
+            <div class="panel-left">
+                <h2>Редактор</h2>
+                <textarea id="editor" placeholder="Введите код Atlas...
+                    
+Примеры:
+свобода ~::~ безопасность
+синтез ::: уровень_2
+понятие ~> Meta-понятие"></textarea>
+                <button id="run-btn">▶ Запустить</button>
+                <button id="synthesis-btn" style="background:#4CAF50;margin-top:5px;">⊕ Синтез</button>
+                <button id="contradiction-btn" style="background:#e94560;margin-top:5px;">~::~ Противоречие</button>
+            </div>
+            
+            <div class="panel-center">
+                <h2>Полифоническое поле</h2>
+                <canvas id="field-canvas" style="width:100%;height:calc(100% - 40px);"></canvas>
+            </div>
+            
+            <div class="panel-right">
+                <h2>Кардиограмма</h2>
+                <canvas id="cardio-canvas" style="width:100%;height:200px;"></canvas>
+                
+                <h2>Рефлексивный каскад</h2>
+                <div id="reflexive-view"></div>
+            </div>
+        </main>
+        
+        <footer>
+            <div id="trace-console"></div>
+        </footer>
+    </div>
+    
+    <script src="js/main.js"></script>
+    <script src="js/editor.js"></script>
+    <script src="js/field.js"></script>
+    <script src="js/cardio.js"></script>
+    <script src="js/ws_client.js"></script>
+    <script src="js/integration.js"></script>
+    <script>
+        wsClient.on('connected', () => {
+            document.getElementById('ws-status').textContent = 'WS: подключен';
+            document.getElementById('ws-status').style.color = '#4CAF50';
+        });
+    </script>
+</body>
+</html>

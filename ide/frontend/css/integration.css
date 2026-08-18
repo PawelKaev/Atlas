@@ -1,0 +1,16 @@
+
+.reflexive-level {
+    padding: 10px;
+    background: #16213e;
+    border-radius: 5px;
+    margin-bottom: 10px;
+}
+
+.reflexive-level div {
+    padding: 3px 0;
+    font-size: 0.85em;
+}
+
+#ws-status {
+    transition: color 0.3s;
+}

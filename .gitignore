@@ -26,3 +26,21 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# IDE build
+ide/target/
+ide/**/target/
+
+# IDE build artifacts
+ide/target/
+
+# IDE build artifacts
+ide/target/
+ide/**/target/
+
+# IDE
+ide/target/
+
+# IDE build
+ide/target/
+ide/**/target/

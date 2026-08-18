@@ -1,0 +1,16 @@
+[package]
+name = "atlas-ide"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+grammalang-core = { path = "../grammalang-core" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = "0.21"
+futures-util = "0.3"
+
+[lib]
+name = "atlas_ide"
+crate-type = ["cdylib", "rlib"]
