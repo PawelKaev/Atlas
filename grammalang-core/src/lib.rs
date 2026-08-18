@@ -6,6 +6,7 @@ use pyo3::wrap_pyfunction;
 pub mod ontology;
 pub mod modes;
 pub mod social;
+pub mod reflexive;
 mod error;
 mod trace;
 mod will_markers;

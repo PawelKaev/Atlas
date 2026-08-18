@@ -9,7 +9,7 @@ pub enum SynthesisError {
     Timeout,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SynthesisResult {
     pub name: String,
     pub description: String,
