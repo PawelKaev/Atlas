@@ -5,6 +5,7 @@ use pyo3::wrap_pyfunction;
 
 pub mod ontology;
 pub mod modes;
+pub mod social;
 mod error;
 mod trace;
 mod will_markers;
